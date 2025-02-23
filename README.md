@@ -1,8 +1,10 @@
-# Limine Zig Template
+# Zinx
 
-This repository will demonstrate how to set up a basic x86-64 kernel in Zig using Limine.
+Zinx is a general-purpose kernel written in Zig, with the intention of being configurable and portable to a wide variety of platforms.
 
-## How to use this?
+Currently x86_64 is the only support architecture.
+
+## How to use Zinx?
 
 ### Dependencies
 

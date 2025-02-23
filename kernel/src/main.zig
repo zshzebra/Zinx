@@ -1,54 +1,94 @@
 const builtin = @import("builtin");
-const limine = @import("limine");
 const std = @import("std");
+const limine = @import("limine");
+const limine_fb = @import("limine_fb.zig");
+const Console = @import("tty.zig").Console;
+const arch = @import("arch.zig").internals;
+const log_root = @import("log.zig");
 
-// The Limine requests can be placed anywhere, but it is important that
-// the compiler does not optimise them away, so, usually, they should
-// be made volatile or equivalent. In Zig, `export var` is what we use.
-pub export var framebuffer_request: limine.FramebufferRequest = .{};
+const LogoSize = enum { Small, Large };
 
-// Set the base revision to 2, this is recommended as this is the latest
-// base revision described by the Limine boot protocol specification.
-// See specification for further info.
+const LOGO_SIZE: LogoSize = .Large;
+
+const logo = switch (LOGO_SIZE) {
+    .Small => @import("Zinx-small.zig"),
+    .Large => @import("Zinx-large.zig"),
+};
+
+const kernel_log = std.log.scoped(.kernel);
+pub var kernel_tty: ?*Console = null;
+
 pub export var base_revision: limine.BaseRevision = .{ .revision = 2 };
 
-inline fn done() noreturn {
-    while (true) {
-        switch (builtin.cpu.arch) {
-            .x86_64 => asm volatile ("hlt"),
-            .aarch64 => asm volatile ("wfi"),
-            .riscv64 => asm volatile ("wfi"),
-            else => unreachable,
-        }
+fn initialized_done(console: *Console) noreturn {
+    for (0..console.width) |_| {
+        console.writeChar('=');
     }
+    console.write("\nFinished Execution\n");
+    for (0..console.width) |_| {
+        console.writeChar('=');
+    }
+    arch.done();
 }
 
-// The following will be our kernel's entry point.
+pub fn log(
+    comptime level: std.log.Level,
+    comptime scope: @TypeOf(.EnumLiteral),
+    comptime format: []const u8,
+    args: anytype,
+) void {
+    log_root.log(level, "(" ++ @tagName(scope) ++ "): " ++ format, args);
+}
+
+pub fn panic(msg: []const u8, _: ?*std.builtin.StackTrace, _: ?usize) noreturn {
+    @setCold(true);
+
+    const panic_tty = kernel_tty orelse arch.done();
+    inline for (0..3) |_| {
+        panic_tty.writeChar('\n');
+    }
+    panic_tty.write("=== KERNEL PANIC ===\n");
+    panic_tty.write(msg);
+
+    arch.done();
+}
+
 export fn _start() callconv(.C) noreturn {
-    // Ensure the bootloader actually understands our base revision (see spec).
     if (!base_revision.is_supported()) {
-        done();
+        arch.done();
     }
 
-    // Ensure we got a framebuffer.
-    if (framebuffer_request.response) |framebuffer_response| {
-        if (framebuffer_response.framebuffer_count < 1) {
-            done();
-        }
+    const framebuffers = limine_fb.initFramebuffers() orelse arch.done();
 
-        // Get the first framebuffer's information.
-        const framebuffer = framebuffer_response.framebuffers()[0];
-
-        for (0..100) |i| {
-            // Calculate the pixel offset using the framebuffer information we obtained above.
-            // We skip `i` scanlines (pitch is provided in bytes) and add `i * 4` to skip `i` pixels forward.
-            const pixel_offset = i * framebuffer.pitch + i * 4;
-
-            // Write 0xFFFFFFFF to the provided pixel offset to fill it white.
-            @as(*u32, @ptrCast(@alignCast(framebuffer.address + pixel_offset))).* = 0xFFFFFFFF;
-        }
+    if (framebuffers.count == 0) {
+        arch.done();
     }
 
-    // We're done, just hang...
-    done();
+    var framebuffer = framebuffers.buffers[0] orelse arch.done();
+
+    var tty = framebuffer.getTTY();
+    kernel_tty = &tty;
+
+    arch.init();
+
+    log_root.init(kernel_tty orelse arch.done());
+
+    kernel_log.debug("Hello World!", .{});
+
+    tty.clear();
+
+    for (0..8) |idx| {
+        kernel_tty.?.writeImage(&logo.data, logo.width, logo.height, 0xFFFFFF, if (idx == 7) .Newline else .Word) catch {
+            @panic("Unexpected error displaying logo");
+        };
+    }
+
+    tty.write("Welcome to Zinx!\n");
+    for (0..1024) |i| {
+        const code: u8 = @intCast('0' + (i % ('9' + 1 - '0')));
+        const str: []const u8 = &[_]u8{code};
+        tty.write(str);
+    }
+    tty.writeChar('\n');
+    initialized_done(&tty);
 }

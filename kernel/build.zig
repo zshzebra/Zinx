@@ -66,5 +66,9 @@ pub fn build(b: *std.Build) void {
     // Set the linker script.
     kernel.setLinkerScriptPath(linker_script_path);
 
+    kernel.addIncludePath(b.path("include"));
+
+    kernel.root_module.addAnonymousImport("VGA9.sfn", .{ .root_source_file = .{ .src_path = .{ .owner = b, .sub_path = "include/VGA9.sfn" } } });
+
     b.installArtifact(kernel);
 }
