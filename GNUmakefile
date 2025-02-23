@@ -1,7 +1,7 @@
 # Nuke built-in rules and variables.
 override MAKEFLAGS += -rR
 
-override IMAGE_NAME := template
+override IMAGE_NAME := zinx
 
 # Convenience macro to reliably declare user overridable variables.
 define DEFAULT_VAR =
@@ -82,6 +82,14 @@ limine/limine:
 	rm -rf limine
 	git clone https://github.com/limine-bootloader/limine.git --branch=v8.x-binary --depth=1
 	$(MAKE) -C limine
+
+images:
+	inkscape --export-png-antialias=0 --export-type=png --export-filename=Zinx-small --export-width=80 -b transparent Zinx.svg
+	inkscape --export-png-antialias=0 --export-type=png --export-filename=Zinx-large --export-width=224 -b transparent Zinx.svg
+	python3 tools/image_convert.py Zinx-small.png
+	python3 tools/image_convert.py Zinx-large.png
+	mv Zinx-small.zig Zinx-large.zig kernel/src
+	rm Zinx-small.png Zinx-large.png
 
 .PHONY: kernel
 kernel:
