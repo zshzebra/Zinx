@@ -5,10 +5,11 @@ const limine_fb = @import("limine_fb.zig");
 const Console = @import("tty.zig").Console;
 const arch = @import("arch.zig").internals;
 const log_root = @import("log.zig");
+const serial = @import("serial.zig");
 
 const LogoSize = enum { Small, Large };
 
-const LOGO_SIZE: LogoSize = .Large;
+const LOGO_SIZE: LogoSize = .Small;
 
 const logo = switch (LOGO_SIZE) {
     .Small => @import("Zinx-small.zig"),
@@ -20,16 +21,10 @@ pub var kernel_tty: ?*Console = null;
 
 pub export var base_revision: limine.BaseRevision = .{ .revision = 2 };
 
-fn initialized_done(console: *Console) noreturn {
-    for (0..console.width) |_| {
-        console.writeChar('=');
-    }
-    console.write("\nFinished Execution\n");
-    for (0..console.width) |_| {
-        console.writeChar('=');
-    }
-    arch.done();
-}
+pub const std_options = std.Options{
+    .logFn = log,
+    .log_level = .debug,
+};
 
 pub fn log(
     comptime level: std.log.Level,
@@ -58,37 +53,57 @@ export fn _start() callconv(.C) noreturn {
         arch.done();
     }
 
-    const framebuffers = limine_fb.initFramebuffers() orelse arch.done();
+    const kernel_serial = serial.init();
+    log_root.init(kernel_serial);
+
+    kernel_log.info("base revision supported", .{});
+    kernel_log.info("serial initialization succeeded", .{});
+
+    kernel_log.info("initializing framebuffers", .{});
+    const framebuffers = limine_fb.initFramebuffers() orelse {
+        kernel_log.err("unable to fetch framebuffers", .{});
+        arch.done();
+    };
+    kernel_log.info("got {} framebuffers", .{framebuffers.count});
 
     if (framebuffers.count == 0) {
         arch.done();
     }
 
     var framebuffer = framebuffers.buffers[0] orelse arch.done();
+    kernel_log.info("using framebuffer #{} with resolution: {}x{}", .{ 0, framebuffer.width, framebuffer.height });
 
+    kernel_log.info("initializing kernel tty", .{});
     var tty = framebuffer.getTTY();
     kernel_tty = &tty;
+    kernel_log.info("tty initialized", .{});
 
+    kernel_log.info("initializing arch", .{});
     arch.init();
+    kernel_log.info("arch initialized", .{});
 
-    log_root.init(kernel_tty orelse arch.done());
+    kernel_log.info("starting kernel main", .{});
+    main() catch |err| {
+        kernel_log.err("Error on kernal main: {}", .{err});
+    };
 
-    kernel_log.debug("Hello World!", .{});
+    kernel_log.info("kernel done", .{});
+    arch.done();
+}
 
-    tty.clear();
-
+fn main() !void {
+    kernel_tty.?.clear();
     for (0..8) |idx| {
         kernel_tty.?.writeImage(&logo.data, logo.width, logo.height, 0xFFFFFF, if (idx == 7) .Newline else .Word) catch {
             @panic("Unexpected error displaying logo");
         };
     }
 
-    tty.write("Welcome to Zinx!\n");
+    kernel_tty.?.write("Welcome to Zinx!\n");
     for (0..1024) |i| {
         const code: u8 = @intCast('0' + (i % ('9' + 1 - '0')));
         const str: []const u8 = &[_]u8{code};
-        tty.write(str);
+        kernel_tty.?.write(str);
     }
-    tty.writeChar('\n');
-    initialized_done(&tty);
+    kernel_tty.?.writeChar('\n');
 }

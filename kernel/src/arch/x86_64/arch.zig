@@ -1,5 +1,7 @@
 const builtin = @import("builtin");
 const idt = @import("idt.zig");
+const serial = @import("serial.zig");
+const Serial = @import("../../serial.zig").Serial;
 
 pub fn halt() void {
     asm volatile ("hlt");
@@ -71,4 +73,20 @@ pub fn ioWait() void {
 /// A common way to initialise the architecture specifics, ie a HAL
 pub fn init() void {
     idt.init();
+
+    asm volatile ("int $0");
+}
+
+pub fn initSerial() Serial {
+    serial.init(9600, serial.Port.COM1) catch {
+        @panic("Failed to initialize serial");
+    };
+
+    return .{
+        .write = writeSerialCom1,
+    };
+}
+
+fn writeSerialCom1(byte: u8) void {
+    serial.write(byte, serial.Port.COM1);
 }
