@@ -1,5 +1,7 @@
 const arch = @import("arch.zig");
+const log = @import("std").log.scoped(.kernel);
 const main = @import("../../main.zig");
+const interrupts = @import("interrupts.zig");
 
 pub const IdtEntry = packed struct {
     /// The lower 16 bits of the offset
@@ -42,7 +44,7 @@ pub const IdtPtr = packed struct {
     base: u64,
 };
 
-pub const InterruptHandler = *const fn () callconv(.Interrupt) void;
+pub const InterruptHandler = *const fn () callconv(.Naked) *arch.CpuState;
 
 // ----------
 // Task gates
@@ -133,14 +135,9 @@ pub fn openInterruptGate(index: u8, handler: InterruptHandler) IdtError!void {
     idt_entries[index] = makeEntry(@intFromPtr(handler), 0x28, 0, INTERRUPT_GATE, PRIVILEGE_RING_0);
 }
 
-fn testHandler() callconv(.Interrupt) void {
-    // @panic("Interrupted!!!");
-    const handler_tty = main.kernel_tty orelse @panic("No tty");
-    handler_tty.write("Hello, Interrupt!\n");
-}
-
 pub fn init() void {
-    openInterruptGate(0, testHandler) catch unreachable;
+    // openInterruptGate(0, testHandler) catch unreachable;
+    openInterruptGate(0, interrupts.getInterruptStub(0)) catch unreachable;
 
     idt_ptr.base = @intFromPtr(&idt_entries);
 
