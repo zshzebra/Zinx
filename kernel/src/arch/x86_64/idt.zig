@@ -136,14 +136,9 @@ pub fn openInterruptGate(index: u8, handler: InterruptHandler) IdtError!void {
 }
 
 pub fn init() void {
-    // openInterruptGate(0, testHandler) catch unreachable;
-    openInterruptGate(0, interrupts.getInterruptStub(0)) catch unreachable;
-
     idt_ptr.base = @intFromPtr(&idt_entries);
 
     arch.loadIdt(&idt_ptr);
 
     arch.enableInterrupts();
-
-    asm volatile ("int $0");
 }

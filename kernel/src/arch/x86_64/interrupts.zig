@@ -1,15 +1,23 @@
 const idt = @import("idt.zig");
+const syscalls = @import("syscalls.zig");
 const arch = @import("arch.zig");
+const irq = @import("irq.zig");
 const log = @import("std").log.scoped(.kernel);
 
+extern fn irqHandler(ctx: *arch.CpuState) *arch.CpuState;
+extern fn isrHandler(ctx: *arch.CpuState) *arch.CpuState;
+
 export fn handler(ctx: *arch.CpuState) callconv(.C) *arch.CpuState {
-    log.debug("Raw int_num: 0x{x}", .{ctx.int_num});
     log.debug("Interrupt {d} called with error code: {d}", .{
         ctx.int_num,
         ctx.error_code,
     });
 
-    return ctx;
+    if (ctx.int_num < irq.IRQ_OFFSET or ctx.int_num == syscalls.INTERRUPT) {
+        return isrHandler(ctx);
+    } else {
+        return irqHandler(ctx);
+    }
 }
 
 export fn commonStub() callconv(.Naked) void {
@@ -87,13 +95,13 @@ pub fn getInterruptStub(comptime interrupt_num: u32) idt.InterruptHandler {
             // First, check if we need to push a dummy error code
             if (interrupt_num != 8 and !(interrupt_num >= 10 and interrupt_num <= 14) and interrupt_num != 17) {
                 asm volatile (
-                    \\ pushq $0
+                    \\ push $0
                 );
             }
 
             // Then push the interrupt number
             asm volatile (
-                \\ pushq %[int_num]
+                \\ push %[int_num]
                 \\ jmp commonStub
                 :
                 : [int_num] "i" (interrupt_num),

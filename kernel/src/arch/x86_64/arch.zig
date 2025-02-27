@@ -1,5 +1,7 @@
 const builtin = @import("builtin");
 const idt = @import("idt.zig");
+const irq = @import("irq.zig");
+const isr = @import("isr.zig");
 const serial = @import("serial.zig");
 const Serial = @import("../../serial.zig").Serial;
 
@@ -109,8 +111,10 @@ pub fn ioWait() void {
 /// A common way to initialise the architecture specifics, ie a HAL
 pub fn init() void {
     idt.init();
+    irq.init();
+    isr.init();
 
-    asm volatile ("int $0");
+    // asm volatile ("int $32");
 }
 
 pub fn initSerial() Serial {
