@@ -2,6 +2,8 @@ const builtin = @import("builtin");
 const idt = @import("idt.zig");
 const irq = @import("irq.zig");
 const isr = @import("isr.zig");
+const pic = @import("pic.zig");
+const keyboard = @import("keyboard.zig");
 const serial = @import("serial.zig");
 const Serial = @import("../../serial.zig").Serial;
 
@@ -45,7 +47,15 @@ pub fn halt() void {
     asm volatile ("hlt");
 }
 
-pub inline fn done() noreturn {
+pub fn done() noreturn {
+    while (true) {
+        halt();
+    }
+}
+
+pub fn spinWait() noreturn {
+    enableInterrupts();
+
     while (true) {
         halt();
     }
@@ -113,6 +123,9 @@ pub fn init() void {
     idt.init();
     irq.init();
     isr.init();
+    pic.init();
+
+    keyboard.init();
 
     // asm volatile ("int $32");
 }

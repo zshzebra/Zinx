@@ -6,6 +6,7 @@ const Console = @import("tty.zig").Console;
 const arch = @import("arch.zig").internals;
 const log_root = @import("log.zig");
 const serial = @import("serial.zig");
+const shell = @import("shell.zig");
 
 const LogoSize = enum { Small, Large };
 
@@ -18,6 +19,7 @@ const logo = switch (LOGO_SIZE) {
 
 const kernel_log = std.log.scoped(.kernel);
 pub var kernel_tty: ?*Console = null;
+pub var kernel_serial: ?serial.Serial = null;
 
 pub export var base_revision: limine.BaseRevision = .{ .revision = 2 };
 
@@ -53,8 +55,8 @@ export fn _start() callconv(.C) noreturn {
         arch.done();
     }
 
-    const kernel_serial = serial.init();
-    log_root.init(kernel_serial);
+    kernel_serial = serial.init();
+    log_root.init(kernel_serial.?);
 
     kernel_log.info("base revision supported", .{});
     kernel_log.info("serial initialization succeeded", .{});
@@ -87,8 +89,7 @@ export fn _start() callconv(.C) noreturn {
         kernel_log.err("Error on kernal main: {}", .{err});
     };
 
-    kernel_log.info("kernel done", .{});
-    arch.done();
+    arch.spinWait();
 }
 
 fn main() !void {
@@ -100,10 +101,7 @@ fn main() !void {
     }
 
     kernel_tty.?.write("Welcome to Zinx!\n");
-    for (0..1024) |i| {
-        const code: u8 = @intCast('0' + (i % ('9' + 1 - '0')));
-        const str: []const u8 = &[_]u8{code};
-        kernel_tty.?.write(str);
-    }
-    kernel_tty.?.writeChar('\n');
+    kernel_tty.?.write("Booting shell\n");
+
+    shell.shell_main(kernel_tty.?);
 }

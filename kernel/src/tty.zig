@@ -10,11 +10,23 @@ pub const Console = struct {
     cursor_y: usize,
     buffer: ConsoleBuffer,
 
+    enableCursor: bool = false,
+
     pub fn writeChar(self: *Console, c: u8) void {
-        if (c == '\n' or self.cursor_x >= self.width) {
+        self.buffer.clearCharFn(self.buffer.ptr, self.cursor_x, self.cursor_y);
+        defer if (self.enableCursor) {
+            self.buffer.writeCursorFn(self.buffer.ptr, self.cursor_x, self.cursor_y);
+        };
+
+        if (c == '\n') {
             self.cursor_x = 0;
             self.cursor_y += 1;
             return;
+        }
+
+        if (self.cursor_x >= self.width) {
+            self.cursor_x = 0;
+            self.cursor_y += 1;
         }
 
         self.buffer.writeCharFn(self.buffer.ptr, c, self.cursor_x, self.cursor_y);
@@ -51,11 +63,21 @@ pub const Console = struct {
         self.cursor_x = x;
         self.cursor_y = y;
     }
+
+    pub fn setEnableCursor(self: *Console, enable: bool) void {
+        self.enableCursor = enable;
+
+        if (enable) {
+            self.buffer.writeCursorFn(self.buffer.ptr, self.cursor_x, self.cursor_y);
+        }
+    }
 };
 
 pub const ConsoleBuffer = struct {
     ptr: *anyopaque,
     writeCharFn: *const fn (ptr: *anyopaque, c: u8, x: usize, y: usize) void,
+    writeCursorFn: *const fn (ptr: *anyopaque, x: usize, y: usize) void,
+    clearCharFn: *const fn (ptr: *anyopaque, x: usize, y: usize) void,
     clearFn: *const fn (ptr: *anyopaque) void,
     writeImageFn: *const fn (ptr: *anyopaque, image: []const u32, image_width: u64, image_height: u64, cursor_x: usize, cursor_y: usize, chroma_key: u32) ImageError!ImageResult,
 };

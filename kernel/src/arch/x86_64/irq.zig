@@ -1,5 +1,6 @@
 const arch = @import("arch.zig");
 const idt = @import("idt.zig");
+const pic = @import("pic.zig");
 const interrupts = @import("interrupts.zig");
 const log = @import("std").log.scoped(.kernel);
 
@@ -25,10 +26,12 @@ export fn irqHandler(ctx: *arch.CpuState) *arch.CpuState {
     if (isValidIrq(irq_offset)) {
         const irq_num = @as(u8, @truncate(irq_offset));
         if (irq_handlers[irq_num]) |handler| {
-            // TODO: Implement APIC
-            const return_context = handler(ctx);
-            // Send EOI
-            return return_context;
+            if (!pic.spuriousIrq(irq_num)) {
+                const return_context = handler(ctx);
+                pic.sendEndOfInterrupt(irq_num);
+                return return_context;
+            }
+            return ctx;
         } else {
             @panic("IRQ Not registered");
         }
@@ -55,7 +58,7 @@ pub fn registerIrq(irq_num: u8, handler: IrqHandler) IrqError!void {
             return error.IrqExists;
         } else {
             irq_handlers[irq_num] = handler;
-            // TODO: Implement APIC
+            pic.clearMask(irq_num);
         }
     } else {
         return error.InvalidIrq;

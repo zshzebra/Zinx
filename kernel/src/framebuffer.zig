@@ -38,6 +38,8 @@ pub const ImageBreak = enum {
 
 pub const FramebufferConsole = struct {
     framebuffer: *Framebuffer,
+    fg: u32,
+    bg: u32,
     offset: struct {
         x: u64,
         y: u64,
@@ -54,17 +56,20 @@ pub const FramebufferConsole = struct {
         ssfn.ssfn_dst.y = 0;
         ssfn.ssfn_dst.fg = 0xFFFFFF;
 
-        return .{ .framebuffer = framebuffer, .offset = .{ .x = 0, .y = 0 } };
+        return .{ .framebuffer = framebuffer, .offset = .{ .x = 0, .y = 0 }, .fg = 0xFFFFFF, .bg = 0x1e1e2e };
     }
 
     pub fn buffer(self: *FramebufferConsole) tty.ConsoleBuffer {
         return .{
             .ptr = self,
             .writeCharFn = writeChar,
+            .writeCursorFn = writeCursor,
+            .clearCharFn = clearChar,
             .clearFn = clear,
             .writeImageFn = writeImage,
         };
     }
+
     pub fn writeChar(ptr: *anyopaque, c: u8, char_x: usize, char_y: usize) void {
         const self: *FramebufferConsole = @ptrCast(@alignCast(ptr));
 
@@ -102,6 +107,29 @@ pub const FramebufferConsole = struct {
             .width = @divFloor(image_width, ssfn_src.?.width),
             .height = @divFloor(image_height, ssfn_src.?.height),
         };
+    }
+
+    fn setCharBlock(self: *FramebufferConsole, color: u32, cursor_x: usize, cursor_y: usize) void {
+        const offset_x = (cursor_x * ssfn_src.?.width) + self.offset.x;
+        const offset_y = (cursor_y * ssfn_src.?.height) + self.offset.y;
+
+        for (0..ssfn_src.?.height) |font_y| {
+            for (0..ssfn_src.?.width) |font_x| {
+                self.framebuffer.setPixel(font_x + offset_x, font_y + offset_y, color);
+            }
+        }
+    }
+
+    pub fn writeCursor(ptr: *anyopaque, char_x: usize, char_y: usize) void {
+        const self: *FramebufferConsole = @ptrCast(@alignCast(ptr));
+
+        self.setCharBlock(self.fg, char_x, char_y);
+    }
+
+    pub fn clearChar(ptr: *anyopaque, char_x: usize, char_y: usize) void {
+        const self: *FramebufferConsole = @ptrCast(@alignCast(ptr));
+
+        self.setCharBlock(self.bg, char_x, char_y);
     }
 
     pub fn clear(ptr: *anyopaque) void {
