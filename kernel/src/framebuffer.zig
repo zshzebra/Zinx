@@ -70,14 +70,20 @@ pub const FramebufferConsole = struct {
         };
     }
 
-    pub fn writeChar(ptr: *anyopaque, c: u8, char_x: usize, char_y: usize) void {
+    pub fn writeChar(console: *tty.Console, ptr: *anyopaque, c: u8, char_x: usize, char_y: usize) void {
         const self: *FramebufferConsole = @ptrCast(@alignCast(ptr));
 
         const x = (char_x * ssfn_src.?.width) + self.offset.x;
-        const y = (char_y * ssfn_src.?.height) + self.offset.y;
+        var y = (char_y * ssfn_src.?.height) + self.offset.y;
 
-        if (x >= self.framebuffer.width or y >= self.framebuffer.height)
+        if (x >= self.framebuffer.width)
             return;
+
+        if (y >= self.framebuffer.height) {
+            self.framebuffer.scroll(ssfn_src.?.height);
+            console.cursor_y -= 1;
+            y -= ssfn_src.?.height;
+        }
 
         ssfn_dst.x = @intCast(x);
         ssfn_dst.y = @intCast(y);
@@ -183,6 +189,31 @@ pub const Framebuffer = struct {
             .XRGB => {
                 @as(*u32, @ptrCast(@alignCast(self.buffer + offset))).* = color | (0xFF << 24);
             },
+        }
+    }
+
+    pub fn getPixel(self: *Framebuffer, x: usize, y: usize) u32 {
+        if (x >= self.width or y >= self.height) return 0;
+
+        const offset = y * self.pitch + x * (self.bpp / 8);
+        switch (self.pixel_format) {
+            .XRGB => {
+                return (@as(*u32, @ptrCast(@alignCast(self.buffer + offset))).*) & (0x00FFFFFF);
+            },
+        }
+    }
+
+    pub fn scroll(self: *Framebuffer, y: usize) void {
+        for (0..self.height + 1) |pixel_y| {
+            for (0..self.width + 1) |pixel_x| {
+                self.setPixel(pixel_x, pixel_y, self.getPixel(pixel_x, pixel_y + y));
+            }
+        }
+
+        for (0..y + 1) |pixel_y| {
+            for (0..self.width + 1) |pixel_x| {
+                self.setPixel(pixel_x, self.height - pixel_y, self.console.bg);
+            }
         }
     }
 

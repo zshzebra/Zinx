@@ -29,7 +29,7 @@ pub const Console = struct {
             self.cursor_y += 1;
         }
 
-        self.buffer.writeCharFn(self.buffer.ptr, c, self.cursor_x, self.cursor_y);
+        self.buffer.writeCharFn(self, self.buffer.ptr, c, self.cursor_x, self.cursor_y);
         self.cursor_x += 1;
     }
 
@@ -75,7 +75,7 @@ pub const Console = struct {
 
 pub const ConsoleBuffer = struct {
     ptr: *anyopaque,
-    writeCharFn: *const fn (ptr: *anyopaque, c: u8, x: usize, y: usize) void,
+    writeCharFn: *const fn (console: *Console, ptr: *anyopaque, c: u8, x: usize, y: usize) void,
     writeCursorFn: *const fn (ptr: *anyopaque, x: usize, y: usize) void,
     clearCharFn: *const fn (ptr: *anyopaque, x: usize, y: usize) void,
     clearFn: *const fn (ptr: *anyopaque) void,

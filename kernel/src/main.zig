@@ -2,6 +2,7 @@ const builtin = @import("builtin");
 const std = @import("std");
 const limine = @import("limine");
 const limine_fb = @import("limine_fb.zig");
+const Framebuffer = @import("framebuffer.zig").Framebuffer;
 const Console = @import("tty.zig").Console;
 const arch = @import("arch.zig").internals;
 const log_root = @import("log.zig");
