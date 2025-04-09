@@ -8,6 +8,7 @@ const arch = @import("arch.zig").internals;
 const log_root = @import("log.zig");
 const serial = @import("serial.zig");
 const shell = @import("shell.zig");
+const keyboard = @import("keyboard.zig");
 
 const LogoSize = enum { Small, Large };
 
@@ -38,16 +39,46 @@ pub fn log(
     log_root.log(level, "(" ++ @tagName(scope) ++ "): " ++ format, args);
 }
 
-pub fn panic(msg: []const u8, _: ?*std.builtin.StackTrace, _: ?usize) noreturn {
+var global_panic_tty: ?*Console = null;
+fn panicWrite(_: void, str: []const u8) error{}!usize {
+    global_panic_tty.?.write(str);
+
+    return str.len;
+}
+
+pub fn panic(msg: []const u8, _: ?*std.builtin.StackTrace, ret_addr: ?usize) noreturn {
     @setCold(true);
 
-    const panic_tty = kernel_tty orelse arch.done();
-    inline for (0..3) |_| {
-        panic_tty.writeChar('\n');
-    }
-    panic_tty.write("=== KERNEL PANIC ===\n");
+    global_panic_tty = kernel_tty orelse arch.done();
+    const panic_tty = global_panic_tty.?;
+    panic_tty.setColors(0x0, 0xf7a41d);
+    panic_tty.setEnableCursor(false);
+    panic_tty.clear();
+    panic_tty.write("Uh Oh! It looks like Zinx has encountered an error.\n");
     panic_tty.write(msg);
+    panic_tty.writeChar('\n');
 
+    if (ret_addr) |addr| {
+        const Writer = std.io.Writer(void, error{}, panicWrite);
+        std.fmt.formatIntValue(addr, "x", .{}, Writer{ .context = {} }) catch {};
+    } else {
+        panic_tty.write("No return address\n");
+    }
+
+    if (keyboard.getKeyboard(0)) |kb| {
+        panic_tty.write("Press and release <space> to shutdown");
+
+        while (true) {
+            if (kb.readKey()) |key| {
+                if (key.released and key.position == keyboard.KeyPosition.SPACE) break;
+            }
+        }
+
+        arch.out(@as(u16, 0x604), @as(u16, 0x2000));
+        arch.done();
+    }
+
+    panic_tty.write("No keyboard found, manually reset your device\n");
     arch.done();
 }
 

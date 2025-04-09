@@ -67,6 +67,7 @@ pub const FramebufferConsole = struct {
             .clearCharFn = clearChar,
             .clearFn = clear,
             .writeImageFn = writeImage,
+            .setColorsFn = setColors,
         };
     }
 
@@ -141,7 +142,16 @@ pub const FramebufferConsole = struct {
     pub fn clear(ptr: *anyopaque) void {
         const self: *FramebufferConsole = @ptrCast(@alignCast(ptr));
 
-        self.framebuffer.clear(0x1e1e2e);
+        self.framebuffer.clear(self.bg);
+    }
+
+    pub fn setColors(ptr: *anyopaque, fg: u32, bg: u32) void {
+        const self: *FramebufferConsole = @ptrCast(@alignCast(ptr));
+
+        self.fg = fg;
+        self.bg = bg;
+
+        ssfn_dst.fg = fg;
     }
 
     pub fn setOffset(ptr: *anyopaque, x: u64, y: u64) void {

@@ -28,6 +28,9 @@ fn parseCommand(buffer: []u8, console: *tty.Console) ?ShellCommand {
         console.write(buffer[8..]);
         console.writeChar('\n');
     }
+    if (std.mem.startsWith(u8, buffer, "panic")) {
+        @panic("User triggered panic");
+    }
 
     return null;
 }

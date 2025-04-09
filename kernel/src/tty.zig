@@ -10,6 +10,7 @@ pub const Console = struct {
     cursor_y: usize,
     buffer: ConsoleBuffer,
 
+    /// Use setEnableCursor instead of modifying directly
     enableCursor: bool = false,
 
     pub fn writeChar(self: *Console, c: u8) void {
@@ -71,6 +72,10 @@ pub const Console = struct {
             self.buffer.writeCursorFn(self.buffer.ptr, self.cursor_x, self.cursor_y);
         }
     }
+
+    pub fn setColors(self: *Console, fg: u32, bg: u32) void {
+        self.buffer.setColorsFn(self.buffer.ptr, fg, bg);
+    }
 };
 
 pub const ConsoleBuffer = struct {
@@ -80,4 +85,5 @@ pub const ConsoleBuffer = struct {
     clearCharFn: *const fn (ptr: *anyopaque, x: usize, y: usize) void,
     clearFn: *const fn (ptr: *anyopaque) void,
     writeImageFn: *const fn (ptr: *anyopaque, image: []const u32, image_width: u64, image_height: u64, cursor_x: usize, cursor_y: usize, chroma_key: u32) ImageError!ImageResult,
+    setColorsFn: *const fn (ptr: *anyopaque, fg: u32, bg: u32) void,
 };
