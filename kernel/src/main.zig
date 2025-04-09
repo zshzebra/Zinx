@@ -46,7 +46,36 @@ fn panicWrite(_: void, str: []const u8) error{}!usize {
     return str.len;
 }
 
-pub fn panic(msg: []const u8, _: ?*std.builtin.StackTrace, ret_addr: ?usize) noreturn {
+fn dumpTrace(stack_trace: std.builtin.StackTrace, tty: *Console) !void {
+    const Writer = std.io.Writer(void, error{}, panicWrite);
+    const writer = Writer{ .context = {} };
+
+    if (builtin.strip_debug_info) {
+        return error.MissingDebugInfo;
+    }
+    // const debug_info = try std.debug.getSelfDebugInfo();
+
+    var frame_index: usize = 0;
+    var frames_left: usize = @min(stack_trace.index, stack_trace.instruction_addresses.len);
+
+    while (frames_left != 0) : ({
+        frames_left -= 1;
+        frame_index = (frame_index + 1) % stack_trace.instruction_addresses.len;
+    }) {
+        const return_address = stack_trace.instruction_addresses[frame_index];
+        try std.fmt.formatIntValue(return_address, "x", .{}, writer);
+        tty.writeChar('\n');
+    }
+
+    if (stack_trace.index > stack_trace.instruction_addresses.len) {
+        const dropped_frames = stack_trace.index - stack_trace.instruction_addresses.len;
+
+        try std.fmt.formatIntValue(dropped_frames, "d", .{}, writer);
+        tty.write(" additional frame skipped\n");
+    }
+}
+
+pub fn panic(msg: []const u8, trace: ?*std.builtin.StackTrace, ret_addr: ?usize) noreturn {
     @setCold(true);
 
     global_panic_tty = kernel_tty orelse arch.done();
@@ -58,13 +87,19 @@ pub fn panic(msg: []const u8, _: ?*std.builtin.StackTrace, ret_addr: ?usize) nor
     panic_tty.write(msg);
     panic_tty.writeChar('\n');
 
+    const Writer = std.io.Writer(void, error{}, panicWrite);
     if (ret_addr) |addr| {
-        const Writer = std.io.Writer(void, error{}, panicWrite);
         panic_tty.write("Return Address: 0x");
         std.fmt.formatIntValue(addr, "x", .{}, Writer{ .context = {} }) catch {};
         panic_tty.writeChar('\n');
     } else {
         panic_tty.write("No return address\n");
+    }
+
+    if (trace) |stack_trace| {
+        dumpTrace(stack_trace.*, panic_tty) catch {};
+    } else {
+        panic_tty.write("No stack trace\n");
     }
 
     if (keyboard.getKeyboard(0)) |kb| {
