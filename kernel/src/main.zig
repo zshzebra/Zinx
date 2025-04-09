@@ -60,7 +60,9 @@ pub fn panic(msg: []const u8, _: ?*std.builtin.StackTrace, ret_addr: ?usize) nor
 
     if (ret_addr) |addr| {
         const Writer = std.io.Writer(void, error{}, panicWrite);
+        panic_tty.write("Return Address: 0x");
         std.fmt.formatIntValue(addr, "x", .{}, Writer{ .context = {} }) catch {};
+        panic_tty.writeChar('\n');
     } else {
         panic_tty.write("No return address\n");
     }
