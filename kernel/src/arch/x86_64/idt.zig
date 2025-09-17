@@ -44,7 +44,7 @@ pub const IdtPtr = packed struct {
     base: u64,
 };
 
-pub const InterruptHandler = *const fn () callconv(.Naked) *arch.CpuState;
+pub const InterruptHandler = *const fn () callconv(.naked) *arch.CpuState;
 
 // ----------
 // Task gates

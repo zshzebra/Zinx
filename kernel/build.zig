@@ -4,7 +4,7 @@ pub fn build(b: *std.Build) void {
     const arch = b.option(std.Target.Cpu.Arch, "arch", "The target kernel architecture") orelse .x86_64;
 
     var code_model: std.builtin.CodeModel = .default;
-    var linker_script_path: std.Build.LazyPath = undefined;
+    var linker_script_path: []const u8 = undefined;
     var target_query: std.Target.Query = .{
         .cpu_arch = arch,
         .os_tag = .freestanding,
@@ -23,7 +23,7 @@ pub fn build(b: *std.Build) void {
             target_query.cpu_features_sub.addFeature(@intFromEnum(Feature.avx2));
 
             code_model = .kernel;
-            linker_script_path = b.path("linker-x86_64.ld");
+            linker_script_path = "linker-x86_64.ld";
         },
         .aarch64 => {
             const Feature = std.Target.aarch64.Feature;
@@ -32,14 +32,14 @@ pub fn build(b: *std.Build) void {
             target_query.cpu_features_sub.addFeature(@intFromEnum(Feature.crypto));
             target_query.cpu_features_sub.addFeature(@intFromEnum(Feature.neon));
 
-            linker_script_path = b.path("linker-aarch64.ld");
+            linker_script_path = "linker-aarch64.ld";
         },
         .riscv64 => {
             const Feature = std.Target.riscv.Feature;
 
             target_query.cpu_features_sub.addFeature(@intFromEnum(Feature.d));
 
-            linker_script_path = b.path("linker-riscv64.ld");
+            linker_script_path = "linker-riscv64.ld";
         },
         else => std.debug.panic("Unsupported architecture: {s}", .{@tagName(arch)}),
     }
@@ -51,10 +51,12 @@ pub fn build(b: *std.Build) void {
     // Build the kernel itself.
     const kernel = b.addExecutable(.{
         .name = "kernel",
-        .root_source_file = b.path("src/main.zig"),
-        .target = target,
-        .optimize = optimize,
-        .code_model = code_model,
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/main.zig"),
+            .target = target,
+            .optimize = optimize,
+            .code_model = code_model,
+        }),
     });
 
     // Disable LTO. This prevents Limine requests from being optimized away.
@@ -64,7 +66,7 @@ pub fn build(b: *std.Build) void {
     kernel.root_module.addImport("limine", limine.module("limine"));
 
     // Set the linker script.
-    kernel.setLinkerScriptPath(linker_script_path);
+    kernel.setLinkerScript(.{ .cwd_relative = linker_script_path });
 
     kernel.addIncludePath(b.path("include"));
 

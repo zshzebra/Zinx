@@ -1,6 +1,7 @@
 .{
-    .name = "zinix",
+    .name = .Zinx,
     .version = "1.0.0",
+    .fingerprint = 0x67527f52ea5a9ff9,
     .paths = .{"."},
     .dependencies = .{
         .limine = .{

@@ -7,7 +7,7 @@ const log = @import("std").log.scoped(.kernel);
 extern fn irqHandler(ctx: *arch.CpuState) *arch.CpuState;
 extern fn isrHandler(ctx: *arch.CpuState) *arch.CpuState;
 
-export fn handler(ctx: *arch.CpuState) callconv(.C) *arch.CpuState {
+export fn handler(ctx: *arch.CpuState) *arch.CpuState {
     log.debug("Interrupt {d} called with error code: {d}", .{
         ctx.int_num,
         ctx.error_code,
@@ -20,7 +20,7 @@ export fn handler(ctx: *arch.CpuState) callconv(.C) *arch.CpuState {
     }
 }
 
-export fn commonStub() callconv(.Naked) void {
+export fn commonStub() callconv(.naked) void {
     asm volatile (
     // Push segment registers
         \\xor %%rax, %%rax
@@ -91,7 +91,7 @@ export fn commonStub() callconv(.Naked) void {
 
 pub fn getInterruptStub(comptime interrupt_num: u32) idt.InterruptHandler {
     return struct {
-        fn func() callconv(.Naked) *arch.CpuState {
+        fn func() callconv(.naked) *arch.CpuState {
             // First, check if we need to push a dummy error code
             if (interrupt_num != 8 and !(interrupt_num >= 10 and interrupt_num <= 14) and interrupt_num != 17) {
                 asm volatile (

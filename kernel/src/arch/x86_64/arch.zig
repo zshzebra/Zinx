@@ -96,19 +96,18 @@ pub fn out(port: u16, data: anytype) void {
             :
             : [port] "{dx}" (port),
               [data] "{al}" (data),
-            : "memory" // Clobber list
-        ),
+            : .{ .memory = true }),
         u16 => asm volatile ("outw %[data], %[port]"
             :
             : [port] "{dx}" (port),
               [data] "{ax}" (data),
-            : "memory"
+            : .{ .memory = true }
         ),
         u32 => asm volatile ("outl %[data], %[port]"
             :
             : [port] "{dx}" (port),
               [data] "{eax}" (data),
-            : "memory"
+            : .{ .memory = true }
         ),
         else => @compileError("Unsupported type for out"),
     }
