@@ -156,6 +156,8 @@ export fn _start() noreturn {
     arch.init();
     kernel_log.info("arch initialized", .{});
 
+    arch.sleep(5000);
+
     kernel_log.info("starting kernel main", .{});
     main() catch |err| {
         kernel_log.err("Error on kernal main: {}", .{err});

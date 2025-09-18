@@ -1,5 +1,6 @@
 const std = @import("std");
 const fmt = @import("std").fmt;
+const arch = @import("arch.zig").internals;
 const Serial = @import("serial.zig").Serial;
 
 const LoggingError = error{};
@@ -28,8 +29,8 @@ fn logCallback(w: *std.Io.Writer, data: []const []const u8, splat: usize) Loggin
 }
 
 pub fn log(comptime level: std.log.Level, comptime format: []const u8, args: anytype) void {
-    // fmt.format(Writer{ .context = {} }, "[" ++ @tagName(level) ++ "]" ++ format ++ "\n", args) catch unreachable;
-    log_writer.print("[{s}] " ++ format ++ "\n", .{@tagName(level)} ++ args) catch unreachable;
+    const millis = arch.millis();
+    log_writer.print("[{s}] [{d}:{d:0>2}.{d:0>3}] " ++ format ++ "\n", .{ @tagName(level), (millis / (1000 * 60)) % 60, (millis / 1000) % 60, millis % 999 } ++ args) catch unreachable;
 }
 
 pub fn init(ser: Serial) void {

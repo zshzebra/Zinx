@@ -122,6 +122,15 @@ fn parseScanCode(scan_code: u8) ?KeyAction {
     return null;
 }
 
+pub fn setLeds(lights: kb.KeyboardLights) void {
+    arch.out(0x60, @as(u8, 0xED));
+    arch.ioWait();
+    arch.out(0x60, @as(u8, @intFromBool(lights.scroll_lock)) | @as(u8, @intFromBool(lights.number_lock)) << 1 | @as(u8, @intFromBool(lights.caps_lock)) << 8 - 2);
+    arch.ioWait();
+    const resp = arch.in(u8, 0x60);
+    log.debug("Got resp = {x}", .{resp});
+}
+
 fn keyEvent(ctx: *arch.CpuState) *arch.CpuState {
     const scan_code = readKeyboardBuffer();
     if (parseScanCode(scan_code)) |action| {

@@ -111,6 +111,12 @@ pub const KeyPosition = enum(u7) {
     KEYPAD_DOT,
 };
 
+pub const KeyboardLights = struct {
+    scroll_lock: bool,
+    number_lock: bool,
+    caps_lock: bool,
+};
+
 pub fn KeyPositionToAscii(position: KeyPosition, shift: bool) ?u8 {
     const key: ?u8 = switch (position) {
         .A => 'A',

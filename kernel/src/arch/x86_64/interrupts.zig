@@ -8,10 +8,13 @@ extern fn irqHandler(ctx: *arch.CpuState) *arch.CpuState;
 extern fn isrHandler(ctx: *arch.CpuState) *arch.CpuState;
 
 export fn handler(ctx: *arch.CpuState) *arch.CpuState {
-    log.debug("Interrupt {d} called with error code: {d}", .{
-        ctx.int_num,
-        ctx.error_code,
-    });
+    // TODO: Add flag to log/not log per interrupt
+    if (ctx.int_num != 32) {
+        log.debug("Interrupt {d} called with error code: {d}", .{
+            ctx.int_num,
+            ctx.error_code,
+        });
+    }
 
     if (ctx.int_num < irq.IRQ_OFFSET or ctx.int_num == syscalls.INTERRUPT) {
         return isrHandler(ctx);

@@ -3,6 +3,7 @@ const idt = @import("idt.zig");
 const irq = @import("irq.zig");
 const isr = @import("isr.zig");
 const pic = @import("pic.zig");
+const pit = @import("pit.zig");
 const keyboard = @import("keyboard.zig");
 const serial = @import("serial.zig");
 const Serial = @import("../../serial.zig").Serial;
@@ -101,14 +102,12 @@ pub fn out(port: u16, data: anytype) void {
             :
             : [port] "{dx}" (port),
               [data] "{ax}" (data),
-            : .{ .memory = true }
-        ),
+            : .{ .memory = true }),
         u32 => asm volatile ("outl %[data], %[port]"
             :
             : [port] "{dx}" (port),
               [data] "{eax}" (data),
-            : .{ .memory = true }
-        ),
+            : .{ .memory = true }),
         else => @compileError("Unsupported type for out"),
     }
 }
@@ -123,6 +122,7 @@ pub fn init() void {
     irq.init();
     isr.init();
     pic.init();
+    pit.init();
 
     keyboard.init();
 
@@ -137,6 +137,14 @@ pub fn initSerial() Serial {
     return .{
         .write = writeSerialCom1,
     };
+}
+
+pub fn millis() u32 {
+    return pit.millis();
+}
+
+pub fn sleep(ms: u32) void {
+    pit.sleep(ms);
 }
 
 fn writeSerialCom1(byte: u8) void {
