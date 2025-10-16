@@ -46,7 +46,7 @@ pub fn build(b: *std.Build) void {
 
     const target = b.resolveTargetQuery(target_query);
     const optimize = b.standardOptimizeOption(.{});
-    const limine = b.dependency("limine", .{});
+    const limine = b.dependency("limine_zig", .{ .api_revision = 3, .allow_deprecated = false, .no_pointers = false });
 
     // Build the kernel itself.
     const kernel = b.addExecutable(.{

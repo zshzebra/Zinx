@@ -14,8 +14,8 @@ pub fn initFramebuffers() ?FramebufferInfo {
 
     var i: usize = 0;
     while (i < info.count) : (i += 1) {
-        const framebuffer = response.framebuffers()[i];
-        info.buffers[i] = Framebuffer.init(framebuffer.address, framebuffer.width, framebuffer.height, framebuffer.pitch, framebuffer.bpp, .XRGB);
+        const framebuffer = response.getFramebuffers()[i];
+        info.buffers[i] = Framebuffer.init(@ptrCast(framebuffer.address), framebuffer.width, framebuffer.height, framebuffer.pitch, framebuffer.bpp, .XRGB);
     }
 
     return info;

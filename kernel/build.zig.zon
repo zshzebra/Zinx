@@ -4,9 +4,9 @@
     .fingerprint = 0x67527f52ea5a9ff9,
     .paths = .{"."},
     .dependencies = .{
-        .limine = .{
-            .url = "https://github.com/48cf/limine-zig/archive/7b29b6e6f6d35052f01ed3831085a39aae131705.tar.gz",
-            .hash = "1220f946f839eab2ec49dca1c805ce72ac3e3ef9c47b3afcdecd1c05a7b35f66d277",
+        .limine_zig = .{
+            .url = "git+https://github.com/Voxi0/limine-zig?ref=trunk#26e5613c94ef20c06d3bf3aaa6c603a1f5418456",
+            .hash = "limine_zig-0.0.0-1TjwQM14AABqdX7nvwmE5ceMp2IMx41uFai2gnqNWU_n",
         },
     },
 }

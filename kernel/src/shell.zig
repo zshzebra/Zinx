@@ -31,6 +31,9 @@ fn parseCommand(buffer: []u8, console: *tty.Console) ?ShellCommand {
     if (std.mem.startsWith(u8, buffer, "panic")) {
         @panic("User triggered panic");
     }
+    if (std.mem.startsWith(u8, buffer, "exit")) {
+        return .Exit;
+    }
 
     return null;
 }
@@ -50,7 +53,11 @@ pub fn shell_main(console: *tty.Console) void {
 
                     // Parse and execute the command
                     if (parseCommand(commandBuffer[0..commandHead], console)) |command| {
-                        _ = command;
+                        switch (command) {
+                            .Exit => {
+                                return;
+                            },
+                        }
                     }
 
                     commandHead = 0;
