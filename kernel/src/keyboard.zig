@@ -165,6 +165,9 @@ pub fn KeyPositionToAscii(position: KeyPosition, shift: bool) ?u8 {
         .APOSTROPHE => '\\',
         .COMMA => ',',
         .DOT => '.',
+        .HASH => '#',
+        .BACKTICK => '`',
+        .EQUALS => '=',
         else => null,
     };
 

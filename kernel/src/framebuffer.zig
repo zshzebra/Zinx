@@ -1,14 +1,18 @@
 const std = @import("std");
 const tty = @import("tty.zig");
+const mojangles = @import("mojangles.zig");
 
-const ssfn = @cImport({
-    @cDefine("SSFN_CONSOLEBITMAP_TRUECOLOR", {});
-    @cDefine("NULL", "((void*)0)");
-    @cInclude("ssfn.h");
-});
+const Font = struct {
+    width: usize,
+    height: usize,
+    data: [256][8]u8,
+};
 
-pub export var ssfn_src: ?*ssfn.ssfn_font_t = null;
-pub export var ssfn_dst: ssfn.ssfn_buf_t = std.mem.zeroes(ssfn.ssfn_buf_t);
+const font: Font = .{
+    .width = mojangles.width,
+    .height = mojangles.height,
+    .data = mojangles.data,
+};
 
 pub const PixelFormat = enum {
     XRGB,
@@ -46,16 +50,6 @@ pub const FramebufferConsole = struct {
     },
 
     pub fn init(framebuffer: *Framebuffer) FramebufferConsole {
-        ssfn.ssfn_src = @ptrCast(@constCast(@embedFile("VGA9.sfn")));
-
-        ssfn.ssfn_dst.ptr = framebuffer.buffer;
-        ssfn.ssfn_dst.w = @intCast(framebuffer.width);
-        ssfn.ssfn_dst.h = @intCast(framebuffer.height);
-        ssfn.ssfn_dst.p = @intCast(framebuffer.pitch);
-        ssfn.ssfn_dst.x = 0;
-        ssfn.ssfn_dst.y = 0;
-        ssfn.ssfn_dst.fg = 0xFFFFFF;
-
         return .{ .framebuffer = framebuffer, .offset = .{ .x = 0, .y = 0 }, .fg = 0xFFFFFF, .bg = 0x1e1e2e };
     }
 
@@ -74,29 +68,32 @@ pub const FramebufferConsole = struct {
     pub fn writeChar(console: *tty.Console, ptr: *anyopaque, c: u8, char_x: usize, char_y: usize) void {
         const self: *FramebufferConsole = @ptrCast(@alignCast(ptr));
 
-        const x = (char_x * ssfn_src.?.width) + self.offset.x;
-        var y = (char_y * ssfn_src.?.height) + self.offset.y;
+        const x = (char_x * 8) + self.offset.x;
+        var y = (char_y * 8) + self.offset.y;
 
-        if (x >= self.framebuffer.width)
-            return;
-
+        if (x >= self.framebuffer.width) return;
         if (y >= self.framebuffer.height) {
-            self.framebuffer.scroll(ssfn_src.?.height);
+            self.framebuffer.scroll(8);
             console.cursor_y -= 1;
-            y -= ssfn_src.?.height;
+            y -= 8;
         }
 
-        ssfn_dst.x = @intCast(x);
-        ssfn_dst.y = @intCast(y);
-
-        _ = ssfn.ssfn_putc(c);
+        for (0..8) |row| {
+            for (0..8) |col| {
+                var color: u32 = self.bg;
+                if ((mojangles.data[c][row] >> @as(u3, @intCast(col))) & 1 == 1) {
+                    color = self.fg;
+                }
+                self.framebuffer.setPixel(x + col, y + row, color);
+            }
+        }
     }
 
     pub fn writeImage(ptr: *anyopaque, image: []const u32, image_width: u64, image_height: u64, cursor_x: usize, cursor_y: usize, chroma_key: u32) ImageError!ImageResult {
         const self: *FramebufferConsole = @ptrCast(@alignCast(ptr));
 
-        const offset_x = (cursor_x * ssfn_src.?.width) + self.offset.x;
-        const offset_y = (cursor_y * ssfn_src.?.height) + self.offset.y;
+        const offset_x = (cursor_x * font.width) + self.offset.x;
+        const offset_y = (cursor_y * font.height) + self.offset.y;
 
         for (0..image_height) |y| {
             for (0..image_width) |x| {
@@ -111,17 +108,17 @@ pub const FramebufferConsole = struct {
         }
 
         return .{
-            .width = @divFloor(image_width, ssfn_src.?.width),
-            .height = @divFloor(image_height, ssfn_src.?.height),
+            .width = @divFloor(image_width, font.width),
+            .height = @divFloor(image_height, font.height),
         };
     }
 
     fn setCharBlock(self: *FramebufferConsole, color: u32, cursor_x: usize, cursor_y: usize) void {
-        const offset_x = (cursor_x * ssfn_src.?.width) + self.offset.x;
-        const offset_y = (cursor_y * ssfn_src.?.height) + self.offset.y;
+        const offset_x = (cursor_x * font.width) + self.offset.x;
+        const offset_y = (cursor_y * font.height) + self.offset.y;
 
-        for (0..ssfn_src.?.height) |font_y| {
-            for (0..ssfn_src.?.width) |font_x| {
+        for (0..font.height) |font_y| {
+            for (0..font.width) |font_x| {
                 self.framebuffer.setPixel(font_x + offset_x, font_y + offset_y, color);
             }
         }
@@ -150,8 +147,6 @@ pub const FramebufferConsole = struct {
 
         self.fg = fg;
         self.bg = bg;
-
-        ssfn_dst.fg = fg;
     }
 
     pub fn setOffset(ptr: *anyopaque, x: u64, y: u64) void {
@@ -240,8 +235,8 @@ pub const Framebuffer = struct {
 
     pub fn getTTY(self: *Framebuffer) tty.Console {
         return .{
-            .width = @intCast(@divFloor(self.width, ssfn_src.?.width)),
-            .height = @intCast(@divFloor(self.height, ssfn_src.?.height)),
+            .width = @intCast(@divFloor(self.width, font.width)),
+            .height = @intCast(@divFloor(self.height, font.height)),
             .cursor_x = 0,
             .cursor_y = 0,
             .buffer = self.console.buffer(),
