@@ -16,31 +16,31 @@ pub const DriverCapabilities = struct {
 };
 
 pub const TimerInterface = struct {
-    sleep: *const fn(ms: u32) void,
-    millis: *const fn() u32,
+    sleep: *const fn (ms: u32) void,
+    millis: *const fn () u32,
 };
 
 pub const InterruptInterface = struct {
-    sendEndOfInterrupt: *const fn(irq_num: u8) void,
-    clearMask: *const fn(irq_num: u8) void,
-    setMask: *const fn(irq_num: u8) void,
-    spuriousIrq: *const fn(irq_num: u8) bool,
+    sendEndOfInterrupt: *const fn (irq_num: u8) void,
+    clearMask: *const fn (irq_num: u8) void,
+    setMask: *const fn (irq_num: u8) void,
+    spuriousIrq: *const fn (irq_num: u8) bool,
 };
 
 pub const SerialInterface = struct {
-    write: *const fn(byte: u8) void,
-    read: *const fn() ?u8,
+    write: *const fn (byte: u8) void,
+    read: *const fn () ?u8,
 };
 
 pub const KeyboardInterface = struct {
-    readKey: *const fn() ?KeyEvent,
-    isEmpty: *const fn() bool,
+    readKey: *const fn () ?KeyEvent,
+    isEmpty: *const fn () bool,
 };
 
 pub const DisplayInterface = struct {
-    clear: *const fn(color: u32) void,
-    setPixel: *const fn(x: usize, y: usize, color: u32) void,
-    getPixel: *const fn(x: usize, y: usize) u32,
+    clear: *const fn (color: u32) void,
+    setPixel: *const fn (x: usize, y: usize, color: u32) void,
+    getPixel: *const fn (x: usize, y: usize) u32,
 };
 
 pub const KeyEvent = struct {
@@ -67,18 +67,18 @@ pub const DriverPriority = enum(u8) {
 };
 
 pub const BlockDeviceInterface = struct {
-    read: *const fn(device: *Device, lba: u64, count: u32, buffer: []u8) DriverError!void,
-    write: *const fn(device: *Device, lba: u64, count: u32, buffer: []const u8) DriverError!void,
-    get_sector_size: *const fn(device: *Device) u32,
-    get_sector_count: *const fn(device: *Device) u64,
+    read: *const fn (device: *Device, lba: u64, count: u32, buffer: []u8) DriverError!void,
+    write: *const fn (device: *Device, lba: u64, count: u32, buffer: []const u8) DriverError!void,
+    get_sector_size: *const fn (device: *Device) u32,
+    get_sector_count: *const fn (device: *Device) u64,
 };
 
 pub const DeviceDriver = struct {
     name: []const u8,
     priority: DriverPriority,
-    match: *const fn(*const Device) ?MatchQuality,
-    init: *const fn(*Device) DriverError!void,
-    unload: *const fn(*Device) void,
+    match: *const fn (*const Device) ?MatchQuality,
+    init: *const fn (*Device) DriverError!void,
+    unload: *const fn (*Device) void,
     block_device_interface: ?*const BlockDeviceInterface = null,
 };
 
@@ -100,9 +100,9 @@ pub const DriverError = error{
 pub const Driver = struct {
     name: []const u8,
     capabilities: DriverCapabilities,
-    probe: *const fn() bool,
-    init: *const fn() DriverError!void,
-    unload: *const fn() void,
+    probe: *const fn () bool,
+    init: *const fn () DriverError!void,
+    unload: *const fn () void,
 
     timer_interface: ?*const TimerInterface = null,
     interrupt_interface: ?*const InterruptInterface = null,
@@ -138,22 +138,14 @@ pub fn init(allocator: Allocator) !void {
     block_devices = std.ArrayList(BlockDevice).empty;
     next_block_device_id = 0;
 
-    // Phase 1: Core drivers
     try probeAndInitDrivers();
-
-    // Phase 2: Bus drivers
     try probeBusDrivers();
     log.info("device enumeration complete: {d} devices found", .{device_mgr.getDevices().len});
-
-    // Phase 3: Register device drivers
     try registerAllDeviceDrivers();
-
-    // Phase 4: Match and init device drivers
     try matchAndInitDeviceDrivers();
     log.info("device driver binding complete", .{});
-
-    // Phase 5: Log block devices
     logBlockDevices();
+    try initVFS();
 
     initialized = true;
     log.info("driver manager initialized", .{});
@@ -216,7 +208,7 @@ fn probeTimers() !void {
         if (driver.probe()) {
             log.info("probing timer driver: {s} - success", .{driver.name});
             driver.init() catch |err| {
-                log.err("failed to initialize timer driver {s}: {}", .{driver.name, err});
+                log.err("failed to initialize timer driver {s}: {}", .{ driver.name, err });
                 continue;
             };
             active_drivers.timer = driver;
@@ -236,7 +228,7 @@ fn probeInterruptControllers() !void {
         if (driver.probe()) {
             log.info("probing interrupt controller: {s} - success", .{driver.name});
             driver.init() catch |err| {
-                log.err("failed to initialize interrupt controller {s}: {}", .{driver.name, err});
+                log.err("failed to initialize interrupt controller {s}: {}", .{ driver.name, err });
                 continue;
             };
             active_drivers.interrupt_controller = driver;
@@ -256,7 +248,7 @@ fn probeSerialDrivers() !void {
         if (driver.probe()) {
             log.info("probing serial driver: {s} - success", .{driver.name});
             driver.init() catch |err| {
-                log.err("failed to initialize serial driver {s}: {}", .{driver.name, err});
+                log.err("failed to initialize serial driver {s}: {}", .{ driver.name, err });
                 continue;
             };
             active_drivers.serial = driver;
@@ -276,7 +268,7 @@ fn probeKeyboardDrivers() !void {
         if (driver.probe()) {
             log.info("probing keyboard driver: {s} - success", .{driver.name});
             driver.init() catch |err| {
-                log.err("failed to initialize keyboard driver {s}: {}", .{driver.name, err});
+                log.err("failed to initialize keyboard driver {s}: {}", .{ driver.name, err });
                 continue;
             };
             active_drivers.keyboard = driver;
@@ -296,7 +288,7 @@ fn probeDisplayDrivers() !void {
         if (driver.probe()) {
             log.info("probing display driver: {s} - success", .{driver.name});
             driver.init() catch |err| {
-                log.err("failed to initialize display driver {s}: {}", .{driver.name, err});
+                log.err("failed to initialize display driver {s}: {}", .{ driver.name, err });
                 continue;
             };
             active_drivers.display = driver;
@@ -508,4 +500,17 @@ fn logBlockDevices() void {
         const name_slice = std.mem.sliceTo(&bd.name, 0);
         log.info("  {s}: {d} MB", .{ name_slice, size_mb });
     }
+}
+
+fn initVFS() !void {
+    const vfs = @import("../vfs/vfs.zig");
+    const ramfs = @import("../fs/ramfs.zig");
+    const fat32_driver = @import("../fs/fat32_driver.zig");
+
+    const root_ramfs = try ramfs.RamFS.init(driver_allocator);
+    try vfs.init(driver_allocator, &root_ramfs.fs);
+
+    try vfs.registerFilesystemDriver(&fat32_driver.fat32_driver);
+
+    log.info("vfs ready for mounting", .{});
 }

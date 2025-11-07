@@ -33,6 +33,7 @@ pub export var hhdm_request: limine.HhdmRequest = .{};
 pub const std_options = std.Options{
     .logFn = log,
     .log_level = .debug,
+    .page_size_max = 4096,
 };
 
 pub fn log(
