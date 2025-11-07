@@ -6,6 +6,7 @@ const BlockStream = @import("../vfs/block_stream.zig").BlockStream;
 const FAT32 = @import("fat32.zig").FAT32;
 const driver_mgr = @import("../drivers/manager.zig");
 const BlockDevice = driver_mgr.BlockDevice;
+const log = std.log.scoped(.fat32_driver);
 
 pub const fat32_driver = vfs.FilesystemDriver{
     .name = "FAT32",
@@ -34,7 +35,8 @@ fn initFAT32(allocator: Allocator, block_dev: *BlockDevice) VFSError!*vfs.FileSy
     const stream = try allocator.create(BlockStream);
     stream.* = BlockStream.init(block_dev, allocator);
 
-    const fat32_fs = FAT32.init(allocator, stream) catch {
+    const fat32_fs = FAT32.init(allocator, stream) catch |err| {
+        log.err("FAT32 init failed: {}", .{err});
         allocator.destroy(stream);
         return VFSError.InitializationFailed;
     };

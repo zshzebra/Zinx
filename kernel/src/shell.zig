@@ -54,7 +54,14 @@ fn printVFSError(console: *tty.Console, err: VFSError) void {
         VFSError.UnknownFilesystem => console.write("Error: Unknown filesystem\n"),
         VFSError.NoSpaceLeft => console.write("Error: No space left\n"),
         VFSError.OutOfMemory => console.write("Error: Out of memory\n"),
-        else => console.write("Error: Operation failed\n"),
+        else => {
+            console.write("Error: ");
+            var buf: [64]u8 = undefined;
+            var fbs = std.io.fixedBufferStream(&buf);
+            var writer = fbs.writer();
+            writer.print("{s}\n", .{@errorName(err)}) catch {};
+            console.write(fbs.getWritten());
+        },
     }
 }
 

@@ -140,6 +140,26 @@ fn testHandler(ctx: *arch.CpuState) *arch.CpuState {
     return ctx;
 }
 
+fn pageFaultHandler(ctx: *arch.CpuState) *arch.CpuState {
+    const cr2 = arch.getCR2();
+    const error_code = ctx.error_code;
+
+    log.err("PAGE FAULT at address 0x{X}", .{cr2});
+    log.err("Error code: 0x{X} ({s}{s}{s}{s}{s})", .{
+        error_code,
+        if (error_code & 1 != 0) "present " else "not-present ",
+        if (error_code & 2 != 0) "write " else "read ",
+        if (error_code & 4 != 0) "user " else "supervisor ",
+        if (error_code & 8 != 0) "reserved-bit " else "",
+        if (error_code & 16 != 0) "instruction-fetch" else "",
+    });
+    log.err("RIP: 0x{X}", .{ctx.rip});
+    log.err("RSP: 0x{X}", .{ctx.rsp});
+    log.err("RAX: 0x{X}, RBX: 0x{X}, RCX: 0x{X}, RDX: 0x{X}", .{ctx.rax, ctx.rbx, ctx.rcx, ctx.rdx});
+
+    @panic("Page fault");
+}
+
 pub fn init() void {
     log.info("init ISR", .{});
     defer log.info("initialized ISR", .{});
@@ -148,6 +168,10 @@ pub fn init() void {
     inline while (i < 32) : (i += 1) {
         openIsr(i, interrupts.getInterruptStub(i));
     }
+
+    registerIsr(PAGE_FAULT, pageFaultHandler) catch |err| {
+        log.err("error registering page fault handler: {}", .{err});
+    };
 
     registerIsr(syscalls.INTERRUPT, testHandler) catch |err| {
         log.err("error registering syscall handler: {}", .{err});

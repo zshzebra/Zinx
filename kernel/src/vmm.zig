@@ -18,13 +18,13 @@ pub const PageFlags = packed struct {
     dirty: bool = false,
     huge: bool = false,
     global: bool = false,
-    reserved: u3 = 0,
-    _unused: u52 = 0,
+    avail: u3 = 0,
 };
 
 const PageEntry = packed struct {
     flags: PageFlags,
-    addr: u52,
+    addr: u40,
+    available: u12 = 0,
 
     fn getPhysAddr(self: PageEntry) PhysAddr {
         return @as(u64, self.addr) << 12;
@@ -43,11 +43,12 @@ const PageTable = struct {
     }
 };
 
-var kernel_page_table: ?*PageTable = null;
+pub var kernel_page_table: ?*PageTable = null;
 
 fn allocPageTable() !*PageTable {
     const phys_addr = pmm.allocFrame() orelse return error.OutOfMemory;
     const virt_addr = memory.physToVirt(phys_addr);
+    log.debug("allocPageTable: phys=0x{X}, virt=0x{X}", .{ phys_addr, virt_addr });
     const page_table: *PageTable = @ptrFromInt(virt_addr);
     @memset(@as([*]u8, @ptrCast(page_table))[0..PAGE_SIZE], 0);
     return page_table;
@@ -69,6 +70,7 @@ fn walkPageTable(pml4: *PageTable, virt_addr: VirtAddr, allocate: bool) !?*PageE
         if (!entry.flags.present) {
             if (!allocate) return null;
 
+            log.debug("walkPageTable: allocating new table at level {d}", .{level});
             const new_table = try allocPageTable();
             entry.setPhysAddr(memory.virtToPhys(@intFromPtr(new_table)));
             entry.flags.present = true;
@@ -78,15 +80,17 @@ fn walkPageTable(pml4: *PageTable, virt_addr: VirtAddr, allocate: bool) !?*PageE
         const next_table_phys = entry.getPhysAddr();
         const next_table_virt = memory.physToVirt(next_table_phys);
         current_table = @ptrFromInt(next_table_virt);
-
-        _ = level;
     }
 
     return current_table.getEntry(indices[3]);
 }
 
 pub fn init() !void {
-    log.info("virtual memory manager initialized (using limine page tables)", .{});
+    const cr3_value = arch.getCR3();
+    const cr3_phys = cr3_value & 0xFFFFFFFFFF000; // Mask out lower 12 bits (flags)
+    const cr3_virt = memory.physToVirt(cr3_phys);
+    kernel_page_table = @ptrFromInt(cr3_virt);
+    log.info("VMM initialized with PML4 at phys=0x{X}, virt=0x{X}", .{ cr3_phys, cr3_virt });
 }
 
 pub fn mapPage(pml4: *PageTable, virt_addr: VirtAddr, phys_addr: PhysAddr, flags: PageFlags) !void {

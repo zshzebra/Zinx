@@ -117,6 +117,18 @@ pub fn ioWait() void {
     out(0x80, @as(u8, 0));
 }
 
+pub fn getCR3() u64 {
+    return asm volatile ("mov %%cr3, %[result]"
+        : [result] "=r" (-> u64),
+    );
+}
+
+pub fn getCR2() u64 {
+    return asm volatile ("mov %%cr2, %[result]"
+        : [result] "=r" (-> u64),
+    );
+}
+
 /// A common way to initialise the architecture specifics, ie a HAL
 pub fn init() void {
     idt.init();

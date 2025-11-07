@@ -251,6 +251,11 @@ pub fn open(path: []const u8, flags: OpenFlags) VFSError!VNode {
     var count_iter = std.mem.splitScalar(u8, path[1..], '/');
     while (count_iter.next()) |_| segment_count += 1;
 
+    // Track current path for mount point checking
+    var path_buffer: [4096]u8 = undefined;
+    var path_len: usize = 1;
+    path_buffer[0] = '/';
+
     var current_segment: usize = 0;
     while (iter.next()) |segment| : (current_segment += 1) {
         if (segment.len == 0) continue;
@@ -270,6 +275,27 @@ pub fn open(path: []const u8, flags: OpenFlags) VFSError!VNode {
 
         if (dir != root_vnode.?.Directory) {
             dir.close();
+        }
+
+        // Build current path and check for mount points
+        @memcpy(path_buffer[path_len..][0..segment.len], segment);
+        path_len += segment.len;
+
+        // Check if this directory is a mount point
+        if (!is_last and current.isDir()) {
+            const current_path = path_buffer[0..path_len];
+            for (mount_points.items) |*mp| {
+                if (std.mem.eql(u8, mp.path, current_path)) {
+                    current.Directory.mount = mp.fs_root;
+                    break;
+                }
+            }
+        }
+
+        // Add separator for next segment
+        if (!is_last) {
+            path_buffer[path_len] = '/';
+            path_len += 1;
         }
 
         if (!is_last and current.isSymlink()) {
@@ -298,7 +324,7 @@ pub fn openFile(path: []const u8, flags: OpenFlags) VFSError!*FileVNode {
 
 pub fn openDir(path: []const u8, flags: OpenFlags) VFSError!*DirVNode {
     const node = try open(path, flags);
-    return switch (node) {
+    const dir = switch (node) {
         .Directory => node.Directory,
         .File => |f| {
             f.close();
@@ -306,6 +332,16 @@ pub fn openDir(path: []const u8, flags: OpenFlags) VFSError!*DirVNode {
         },
         .Symlink => return VFSError.InvalidPath,
     };
+
+    for (mount_points.items) |*mp| {
+        if (std.mem.eql(u8, mp.path, path)) {
+            const mutable_dir: *DirVNode = @constCast(dir);
+            mutable_dir.mount = mp.fs_root;
+            break;
+        }
+    }
+
+    return dir;
 }
 
 pub fn getRoot() VNode {

@@ -1,6 +1,7 @@
 const std = @import("std");
 const memory = @import("memory.zig");
 const pmm = @import("pmm.zig");
+const vmm = @import("vmm.zig");
 const log = std.log.scoped(.allocator);
 
 const VirtAddr = memory.VirtAddr;
@@ -78,17 +79,16 @@ const KernelAllocator = struct {
 };
 
 pub fn init() !void {
-    const heap_pages = 256;
+    const heap_pages = 4096;
     const heap_size_bytes = heap_pages * PAGE_SIZE;
 
-    // Use PMM to get physical memory, then convert to virtual via HHDM
-    const heap_phys_start = pmm.allocFrame() orelse return error.OutOfMemory;
+    // Choose a virtual address range for the heap
+    const heap_virt_start: VirtAddr = 0xFFFF900000000000;
 
-    // Allocate contiguous physical frames
-    var allocated_frames: [256]PhysAddr = undefined;
-    allocated_frames[0] = heap_phys_start;
-
-    for (1..heap_pages) |i| {
+    // Allocate physical frames
+    log.debug("Allocating {} physical frames for heap", .{heap_pages});
+    var allocated_frames: [4096]PhysAddr = undefined;
+    for (0..heap_pages) |i| {
         allocated_frames[i] = pmm.allocFrame() orelse {
             // Free previously allocated frames on failure
             for (0..i) |j| {
@@ -97,10 +97,34 @@ pub fn init() !void {
             return error.OutOfMemory;
         };
     }
+    log.debug("Allocated all {} physical frames", .{heap_pages});
 
-    // Use the first frame as our heap start
-    const heap_virt = memory.physToVirt(heap_phys_start);
-    heap_start = @ptrFromInt(heap_virt);
+    // Map each physical frame to consecutive virtual pages
+    log.debug("Starting to map {} pages to virtual address 0x{X}", .{ heap_pages, heap_virt_start });
+    var last_phys: PhysAddr = 0;
+    for (allocated_frames, 0..) |phys_addr, i| {
+        const virt_addr = heap_virt_start + (i * PAGE_SIZE);
+
+        // Only log first page, discontinuities, and last page
+        const is_discontinuous = (i > 0 and phys_addr != last_phys + PAGE_SIZE);
+        if (i == 0 or is_discontinuous or i == heap_pages - 1) {
+            log.debug("Mapping page {}/{}: virt=0x{X} -> phys=0x{X}{s}", .{
+                i, heap_pages, virt_addr, phys_addr,
+                if (is_discontinuous) " [JUMP]" else ""
+            });
+        }
+
+        try vmm.mapPage(vmm.kernel_page_table.?, virt_addr, phys_addr, vmm.PageFlags{
+            .present = true,
+            .writable = true,
+            .global = true,
+        });
+        last_phys = phys_addr;
+    }
+    log.debug("Finished mapping all pages", .{});
+
+    // Initialize the heap
+    heap_start = @ptrFromInt(heap_virt_start);
     heap_size = heap_size_bytes;
 
     heap_start.?.* = BlockHeader{
@@ -110,9 +134,10 @@ pub fn init() !void {
     };
 
     initialized = true;
-    log.info("heap initialized: {} KB at 0x{X}", .{
+    log.info("heap initialized: {} KB at 0x{X} (mapped {} non-contiguous frames)", .{
         heap_size / 1024,
-        heap_virt
+        heap_virt_start,
+        heap_pages,
     });
 }
 

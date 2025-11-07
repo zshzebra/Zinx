@@ -5,7 +5,7 @@ const VFSError = @import("../vfs/errors.zig").VFSError;
 const BlockStream = @import("../vfs/block_stream.zig").BlockStream;
 const log = std.log.scoped(.fat32);
 
-const BootRecord = extern struct {
+const BootRecord = struct {
     jmp: [3]u8,
     oem: [8]u8,
     bytes_per_sector: u16,
@@ -34,6 +34,34 @@ const BootRecord = extern struct {
     volume_label: [11]u8,
     filesystem_type: [8]u8,
 };
+
+fn initStruct(comptime Type: type, bytes: []const u8) Type {
+    var ret: Type = undefined;
+    comptime var index = 0;
+    inline for (std.meta.fields(Type)) |item| {
+        switch (item.type) {
+            u8 => @field(ret, item.name) = bytes[index],
+            u16 => @field(ret, item.name) = std.mem.bytesAsSlice(u16, bytes[index .. index + 2])[0],
+            u32 => @field(ret, item.name) = std.mem.bytesAsSlice(u32, bytes[index .. index + 4])[0],
+            else => {
+                switch (@typeInfo(item.type)) {
+                    .array => |info| switch (info.child) {
+                        u8 => {
+                            comptime var i = 0;
+                            inline while (i < info.len) : (i += 1) {
+                                @field(ret, item.name)[i] = bytes[index + i];
+                            }
+                        },
+                        else => @compileError("Unsupported array type in initStruct"),
+                    },
+                    else => @compileError("Unsupported field type in initStruct"),
+                }
+            },
+        }
+        index += @sizeOf(item.type);
+    }
+    return ret;
+}
 
 const ShortName = extern struct {
     name: [8]u8,
@@ -128,15 +156,28 @@ pub const FAT32 = struct {
         var r = stream.reader(&read_buffer);
         try r.interface.readSliceAll(&boot_sector);
 
-        const boot_record: *const BootRecord = @ptrCast(@alignCast(&boot_sector));
-
         if (boot_sector[510] != 0x55 or boot_sector[511] != 0xAA) {
             return VFSError.FilesystemCorrupted;
         }
 
+        const boot_record = initStruct(BootRecord, &boot_sector);
+
+        log.debug("filesystem_type from boot_sector[82..90]: '{s}'", .{boot_sector[82..90]});
+        log.debug("filesystem_type from initStruct: '{s}'", .{boot_record.filesystem_type});
+
         if (!std.mem.eql(u8, "FAT32   ", &boot_record.filesystem_type)) {
+            log.err("filesystem type mismatch!", .{});
             return VFSError.UnknownFilesystem;
         }
+
+        log.debug("Boot record: bps={}, spc={}, rs={}, ts={}, spf={}, rdc={}", .{
+            boot_record.bytes_per_sector,
+            boot_record.sectors_per_cluster,
+            boot_record.reserved_sectors,
+            boot_record.total_sectors,
+            boot_record.sectors_per_fat,
+            boot_record.root_directory_cluster,
+        });
 
         const fat_config = FATConfig{
             .bytes_per_sector = boot_record.bytes_per_sector,
@@ -148,8 +189,10 @@ pub const FAT32 = struct {
             .cluster_end_marker = 0x0FFFFFF8,
         };
 
+        log.debug("FAT config created, calculating sizes...", .{});
         const fat_size_bytes = fat_config.sectors_per_fat * fat_config.bytes_per_sector;
         const fat_entries = fat_size_bytes / 4;
+        log.debug("Allocating FAT cache: {} bytes ({} entries)", .{ fat_size_bytes, fat_entries });
         const fat_cache = try allocator.alloc(u32, @intCast(fat_entries));
         errdefer allocator.free(fat_cache);
 
@@ -241,6 +284,7 @@ pub const FAT32 = struct {
         defer self.allocator.free(cluster_buffer);
 
         var current_cluster = parent_info.cluster;
+
         while (true) {
             try self.readCluster(current_cluster, cluster_buffer);
 
@@ -248,7 +292,9 @@ pub const FAT32 = struct {
             while (offset + 32 <= cluster_buffer.len) : (offset += 32) {
                 const entry: *const ShortName = @ptrCast(@alignCast(&cluster_buffer[offset]));
 
-                if (entry.name[0] == 0x00) break;
+                if (entry.name[0] == 0x00) {
+                    break;
+                }
                 if (entry.name[0] == 0xE5) continue;
                 if (entry.isLongName()) continue;
                 if ((entry.attributes & ShortName.ATTR_VOLUME_ID) != 0) continue;
