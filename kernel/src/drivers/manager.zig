@@ -1,5 +1,8 @@
 const std = @import("std");
+const Allocator = std.mem.Allocator;
 const log = std.log.scoped(.driver_manager);
+const device_mgr = @import("device.zig");
+const Device = device_mgr.Device;
 
 pub const DriverCapabilities = struct {
     timer: bool = false,
@@ -50,6 +53,42 @@ pub const KeyEvent = struct {
     },
 };
 
+pub const MatchQuality = enum(u8) {
+    Generic = 1,
+    ClassMatch = 2,
+    ExactMatch = 3,
+};
+
+pub const DriverPriority = enum(u8) {
+    Fallback = 0,
+    Normal = 1,
+    Preferred = 2,
+    Specific = 3,
+};
+
+pub const BlockDeviceInterface = struct {
+    read: *const fn(device: *Device, lba: u64, count: u32, buffer: []u8) DriverError!void,
+    write: *const fn(device: *Device, lba: u64, count: u32, buffer: []const u8) DriverError!void,
+    get_sector_size: *const fn(device: *Device) u32,
+    get_sector_count: *const fn(device: *Device) u64,
+};
+
+pub const DeviceDriver = struct {
+    name: []const u8,
+    priority: DriverPriority,
+    match: *const fn(*const Device) ?MatchQuality,
+    init: *const fn(*Device) DriverError!void,
+    unload: *const fn(*Device) void,
+    block_device_interface: ?*const BlockDeviceInterface = null,
+};
+
+pub const BlockDevice = struct {
+    id: u32,
+    name: [16]u8,
+    device: *Device,
+    interface: *const BlockDeviceInterface,
+};
+
 pub const DriverError = error{
     ProbeFailed,
     InitializationFailed,
@@ -81,14 +120,40 @@ const ActiveDrivers = struct {
 };
 
 var active_drivers: ActiveDrivers = .{};
+var device_drivers: std.ArrayList(*const DeviceDriver) = undefined;
+var block_devices: std.ArrayList(BlockDevice) = undefined;
+var driver_allocator: Allocator = undefined;
+var next_block_device_id: u32 = 0;
 var initialized = false;
 
-pub fn init() !void {
+pub fn init(allocator: Allocator) !void {
     if (initialized) return;
 
     log.info("initializing driver manager", .{});
 
+    // Initialize subsystems
+    driver_allocator = allocator;
+    try device_mgr.init(allocator);
+    device_drivers = std.ArrayList(*const DeviceDriver).empty;
+    block_devices = std.ArrayList(BlockDevice).empty;
+    next_block_device_id = 0;
+
+    // Phase 1: Core drivers
     try probeAndInitDrivers();
+
+    // Phase 2: Bus drivers
+    try probeBusDrivers();
+    log.info("device enumeration complete: {d} devices found", .{device_mgr.getDevices().len});
+
+    // Phase 3: Register device drivers
+    try registerAllDeviceDrivers();
+
+    // Phase 4: Match and init device drivers
+    try matchAndInitDeviceDrivers();
+    log.info("device driver binding complete", .{});
+
+    // Phase 5: Log block devices
+    logBlockDevices();
 
     initialized = true;
     log.info("driver manager initialized", .{});
@@ -331,4 +396,116 @@ fn getDisplayDrivers() []const *const Driver {
     return &[_]*const Driver{
         &framebuffer_display.driver,
     };
+}
+
+fn getBusDrivers() []const *const Driver {
+    const ata_bus = @import("buses/ata.zig");
+
+    return &[_]*const Driver{
+        &ata_bus.driver,
+    };
+}
+
+fn probeBusDrivers() !void {
+    const bus_drivers = getBusDrivers();
+
+    for (bus_drivers) |driver| {
+        if (driver.probe()) {
+            log.info("probing bus driver: {s} - success", .{driver.name});
+            try driver.init();
+            // Bus driver enumerates devices during init
+        } else {
+            log.debug("probing bus driver: {s} - failed", .{driver.name});
+        }
+    }
+}
+
+fn registerAllDeviceDrivers() !void {
+    const ata_pio = @import("storage/ata_pio.zig");
+    try registerDeviceDriver(&ata_pio.device_driver);
+}
+
+pub fn registerDeviceDriver(driver: *const DeviceDriver) !void {
+    try device_drivers.append(driver_allocator, driver);
+}
+
+fn matchAndInitDeviceDrivers() !void {
+    const devices = device_mgr.getDevices();
+
+    for (devices) |*device| {
+        if (findBestDriver(device)) |driver| {
+            driver.init(device) catch |err| {
+                log.err("failed to init driver {s} for device: {}", .{ driver.name, err });
+                continue;
+            };
+            device.bound_driver = driver;
+            log.info("bound driver {s} to device {d}", .{ driver.name, device.id });
+        } else {
+            log.warn("no compatible driver found for device {d}", .{device.id});
+        }
+    }
+}
+
+fn findBestDriver(device: *Device) ?*const DeviceDriver {
+    var best_driver: ?*const DeviceDriver = null;
+    var best_rank: u16 = 0;
+
+    for (device_drivers.items) |driver| {
+        if (driver.match(device)) |quality| {
+            // Calculate rank: quality in high byte, priority in low byte
+            const rank = (@as(u16, @intFromEnum(quality)) << 8) | @as(u16, @intFromEnum(driver.priority));
+
+            if (rank > best_rank) {
+                best_rank = rank;
+                best_driver = driver;
+            }
+        }
+    }
+
+    return best_driver;
+}
+
+pub fn registerBlockDevice(name: []const u8, device: *Device, interface: *const BlockDeviceInterface) !u32 {
+    var bd = BlockDevice{
+        .id = next_block_device_id,
+        .name = undefined,
+        .device = device,
+        .interface = interface,
+    };
+    next_block_device_id += 1;
+
+    // Copy name (truncate if too long)
+    const copy_len = @min(name.len, bd.name.len - 1);
+    @memcpy(bd.name[0..copy_len], name[0..copy_len]);
+    bd.name[copy_len] = 0; // Null terminate
+
+    try block_devices.append(driver_allocator, bd);
+    return bd.id;
+}
+
+pub fn getBlockDevice(id: u32) ?*BlockDevice {
+    for (block_devices.items) |*bd| {
+        if (bd.id == id) return bd;
+    }
+    return null;
+}
+
+pub fn getBlockDevices() []BlockDevice {
+    return block_devices.items;
+}
+
+fn logBlockDevices() void {
+    const devices = getBlockDevices();
+    if (devices.len == 0) {
+        log.info("no block devices found", .{});
+        return;
+    }
+
+    log.info("found {d} block device(s):", .{devices.len});
+    for (devices) |bd| {
+        const sectors = bd.interface.get_sector_count(bd.device);
+        const size_mb = (sectors * 512) / (1024 * 1024);
+        const name_slice = std.mem.sliceTo(&bd.name, 0);
+        log.info("  {s}: {d} MB", .{ name_slice, size_mb });
+    }
 }

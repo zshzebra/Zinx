@@ -33,7 +33,7 @@ run-hdd: run-hdd-$(KARCH)
 
 .PHONY: run-x86_64
 run-x86_64: ovmf $(IMAGE_NAME).iso
-	qemu-system-x86_64 -M q35 -m 2G -bios ovmf-x86_64/OVMF.fd -cdrom $(IMAGE_NAME).iso -boot d -serial stdio -display sdl -audiodev pa,id=snd0 -machine pcspk-audiodev=snd0
+	qemu-system-x86_64 -M pc -m 2G -bios ovmf-x86_64/OVMF.fd -cdrom $(IMAGE_NAME).iso -boot d -hdb test_disk.img -serial stdio -display sdl -audiodev pa,id=snd0 -machine pcspk-audiodev=snd0
 
 .PHONY: run-hdd-x86_64
 run-hdd-x86_64: ovmf $(IMAGE_NAME).hdd
@@ -57,7 +57,7 @@ run-hdd-riscv64: ovmf $(IMAGE_NAME).hdd
 
 .PHONY: run-bios
 run-bios: $(IMAGE_NAME).iso
-	qemu-system-x86_64 -M q35 -m 2G -cdrom $(IMAGE_NAME).iso -boot d
+	qemu-system-x86_64 -M pc -m 2G -cdrom $(IMAGE_NAME).iso -boot d -hdb test_disk.img
 
 .PHONY: run-hdd-bios
 run-hdd-bios: $(IMAGE_NAME).hdd

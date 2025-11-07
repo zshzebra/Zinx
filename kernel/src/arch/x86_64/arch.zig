@@ -127,7 +127,7 @@ pub fn init() void {
         @panic("Failed to initialize memory management");
     };
 
-    driver_manager.init() catch {
+    driver_manager.init(allocator.getAllocator()) catch {
         @panic("Failed to initialize driver manager");
     };
 
