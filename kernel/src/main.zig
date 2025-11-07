@@ -88,8 +88,7 @@ export fn _start() noreturn {
         arch.done();
     }
 
-    kernel_serial = serial.init();
-    log_root.init(kernel_serial.?);
+    log_root.init();
 
     kernel_log.info("base revision supported", .{});
     kernel_log.info("serial initialization succeeded", .{});

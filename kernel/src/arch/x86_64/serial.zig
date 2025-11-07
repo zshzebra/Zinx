@@ -55,11 +55,42 @@ fn transmissionIsEmpty(port: Port) bool {
     return arch.in(u8, @intFromEnum(port) + 5) & 0x20 > 0;
 }
 
+fn dataAvailable(port: Port) bool {
+    return arch.in(u8, @intFromEnum(port) + 5) & 0x01 > 0;
+}
+
 pub fn write(char: u8, port: Port) void {
     while (!transmissionIsEmpty(port)) {
         arch.halt();
     }
     arch.out(@intFromEnum(port), char);
+}
+
+pub fn read(port: Port) ?u8 {
+    if (dataAvailable(port)) {
+        return arch.in(u8, @intFromEnum(port));
+    }
+    return null;
+}
+
+pub fn isPresent(port: Port) bool {
+    const port_int = @intFromEnum(port);
+
+    arch.out(port_int + 1, @as(u8, 0x00));
+    arch.out(port_int + 3, @as(u8, 0x80));
+    arch.out(port_int + 0, @as(u8, 0x03));
+    arch.out(port_int + 1, @as(u8, 0x00));
+    arch.out(port_int + 3, @as(u8, 0x03));
+    arch.out(port_int + 2, @as(u8, 0xC7));
+    arch.out(port_int + 4, @as(u8, 0x0B));
+    arch.out(port_int + 4, @as(u8, 0x1E));
+    arch.out(port_int + 0, @as(u8, 0xAE));
+
+    if (arch.in(u8, port_int + 0) == 0xAE) {
+        arch.out(port_int + 4, @as(u8, 0x0F));
+        return true;
+    }
+    return false;
 }
 
 pub fn init(baud: u32, port: Port) SerialError!void {

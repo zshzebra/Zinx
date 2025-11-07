@@ -2,15 +2,12 @@ const builtin = @import("builtin");
 const idt = @import("idt.zig");
 const irq = @import("irq.zig");
 const isr = @import("isr.zig");
-const pic = @import("pic.zig");
-const pit = @import("pit.zig");
-const keyboard = @import("keyboard.zig");
-const serial = @import("serial.zig");
 const Serial = @import("../../serial.zig").Serial;
 const memory = @import("../../memory.zig");
 const pmm = @import("../../pmm.zig");
 const vmm = @import("../../vmm.zig");
 const allocator = @import("../../allocator.zig");
+const driver_manager = @import("../../drivers/manager.zig");
 
 pub const CpuState = struct {
     // General purpose registers (pushed last by common stub)
@@ -125,13 +122,13 @@ pub fn init() void {
     idt.init();
     irq.init();
     isr.init();
-    pic.init();
-    pit.init();
-
-    keyboard.init();
 
     initMemory() catch {
         @panic("Failed to initialize memory management");
+    };
+
+    driver_manager.init() catch {
+        @panic("Failed to initialize driver manager");
     };
 
     // asm volatile ("int $32");
@@ -145,23 +142,25 @@ fn initMemory() !void {
 }
 
 pub fn initSerial() Serial {
-    serial.init(9600, serial.Port.COM1) catch {
-        @panic("Failed to initialize serial");
-    };
-
-    return .{
-        .write = writeSerialCom1,
-    };
+    if (driver_manager.getSerialInterface()) |serial_interface| {
+        return .{
+            .write = serial_interface.write,
+        };
+    } else {
+        @panic("No serial driver available");
+    }
 }
 
 pub fn millis() u32 {
-    return pit.millis();
+    if (driver_manager.getTimerInterface()) |timer_interface| {
+        return timer_interface.millis();
+    }
+    return 0;
 }
 
 pub fn sleep(ms: u32) void {
-    pit.sleep(ms);
+    if (driver_manager.getTimerInterface()) |timer_interface| {
+        timer_interface.sleep(ms);
+    }
 }
 
-fn writeSerialCom1(byte: u8) void {
-    serial.write(byte, serial.Port.COM1);
-}
