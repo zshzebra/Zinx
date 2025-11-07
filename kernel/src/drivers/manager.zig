@@ -148,15 +148,17 @@ fn probeTimers() !void {
     const timer_drivers = getTimerDrivers();
 
     for (timer_drivers) |driver| {
-        log.info("force loading timer driver: {s}", .{driver.name});
-
-        // FORCE LOAD - Skip probing for testing
-        driver.init() catch |err| {
-            log.err("failed to initialize timer driver {s}: {}", .{driver.name, err});
-            continue;
-        };
-        active_drivers.timer = driver;
-        return;
+        if (driver.probe()) {
+            log.info("probing timer driver: {s} - success", .{driver.name});
+            driver.init() catch |err| {
+                log.err("failed to initialize timer driver {s}: {}", .{driver.name, err});
+                continue;
+            };
+            active_drivers.timer = driver;
+            log.info("active timer driver: {s}", .{driver.name});
+            return;
+        }
+        log.debug("probing timer driver: {s} - failed", .{driver.name});
     }
 
     return DriverError.NoDriverFound;
@@ -166,15 +168,17 @@ fn probeInterruptControllers() !void {
     const interrupt_drivers = getInterruptDrivers();
 
     for (interrupt_drivers) |driver| {
-        log.info("force loading interrupt controller: {s}", .{driver.name});
-
-        // FORCE LOAD - Skip probing for testing
-        driver.init() catch |err| {
-            log.err("failed to initialize interrupt controller {s}: {}", .{driver.name, err});
-            continue;
-        };
-        active_drivers.interrupt_controller = driver;
-        return;
+        if (driver.probe()) {
+            log.info("probing interrupt controller: {s} - success", .{driver.name});
+            driver.init() catch |err| {
+                log.err("failed to initialize interrupt controller {s}: {}", .{driver.name, err});
+                continue;
+            };
+            active_drivers.interrupt_controller = driver;
+            log.info("active interrupt controller: {s}", .{driver.name});
+            return;
+        }
+        log.debug("probing interrupt controller: {s} - failed", .{driver.name});
     }
 
     return DriverError.NoDriverFound;
@@ -184,15 +188,17 @@ fn probeSerialDrivers() !void {
     const serial_drivers = getSerialDrivers();
 
     for (serial_drivers) |driver| {
-        log.info("force loading serial driver: {s}", .{driver.name});
-
-        // FORCE LOAD - Skip probing for testing
-        driver.init() catch |err| {
-            log.err("failed to initialize serial driver {s}: {}", .{driver.name, err});
-            continue;
-        };
-        active_drivers.serial = driver;
-        return;
+        if (driver.probe()) {
+            log.info("probing serial driver: {s} - success", .{driver.name});
+            driver.init() catch |err| {
+                log.err("failed to initialize serial driver {s}: {}", .{driver.name, err});
+                continue;
+            };
+            active_drivers.serial = driver;
+            log.info("active serial driver: {s}", .{driver.name});
+            return;
+        }
+        log.debug("probing serial driver: {s} - failed", .{driver.name});
     }
 
     return DriverError.NoDriverFound;
