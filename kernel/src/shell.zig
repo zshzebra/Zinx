@@ -36,10 +36,6 @@ fn tokenizeCommand(buffer: []const u8, args: [][]const u8) usize {
     return arg_count;
 }
 
-fn parseU32(str: []const u8) ?u32 {
-    return std.fmt.parseInt(u32, str, 10) catch null;
-}
-
 fn printVFSError(console: *tty.Console, err: VFSError) void {
     switch (err) {
         VFSError.NotAbsolutePath => console.write("Error: Path must be absolute (start with /)\n"),
@@ -186,17 +182,16 @@ fn handleCat(args: []const []const u8, console: *tty.Console) void {
 
 fn handleMount(args: []const []const u8, console: *tty.Console) void {
     if (args.len != 2) {
-        console.write("Usage: mount <device_id> <path>\n");
+        console.write("Usage: mount <device> <path>\n");
+        console.write("Example: mount ata0 /mnt\n");
         return;
     }
 
-    const device_id = parseU32(args[0]) orelse {
-        console.write("Error: Invalid device ID\n");
-        return;
-    };
-
-    const device = driver_mgr.getBlockDevice(device_id) orelse {
-        console.write("Error: Block device not found\n");
+    const device = driver_mgr.getBlockDeviceByName(args[0]) orelse {
+        console.write("Error: Block device '");
+        console.write(args[0]);
+        console.write("' not found\n");
+        console.write("Use 'lsblk' to list available devices\n");
         return;
     };
 
@@ -205,7 +200,36 @@ fn handleMount(args: []const []const u8, console: *tty.Console) void {
         return;
     };
 
-    console.write("Mounted successfully\n");
+    console.write("Mounted ");
+    console.write(args[0]);
+    console.write(" at ");
+    console.write(args[1]);
+    console.write("\n");
+}
+
+fn handleLsblk(args: []const []const u8, console: *tty.Console) void {
+    _ = args;
+
+    const devices = driver_mgr.getBlockDevices();
+
+    if (devices.len == 0) {
+        console.write("No block devices found\n");
+        return;
+    }
+
+    console.write("NAME      SIZE\n");
+
+    for (devices) |*bd| {
+        const name_slice = std.mem.sliceTo(&bd.name, 0);
+        const sectors = bd.interface.get_sector_count(bd.device);
+        const size_mb = (sectors * 512) / (1024 * 1024);
+
+        var buf: [64]u8 = undefined;
+        var fbs = std.io.fixedBufferStream(&buf);
+        const writer = fbs.writer();
+        writer.print("{s:<10}{d} MB\n", .{ name_slice, size_mb }) catch {};
+        console.write(fbs.getWritten());
+    }
 }
 
 fn parseCommand(buffer: []u8, console: *tty.Console) ?ShellCommand {
@@ -227,6 +251,8 @@ fn parseCommand(buffer: []u8, console: *tty.Console) ?ShellCommand {
         handleCat(args, console);
     } else if (std.mem.eql(u8, cmd, "mount")) {
         handleMount(args, console);
+    } else if (std.mem.eql(u8, cmd, "lsblk")) {
+        handleLsblk(args, console);
     } else if (std.mem.eql(u8, cmd, "echo")) {
         if (args.len > 0) {
             for (args, 0..) |arg, i| {

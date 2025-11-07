@@ -39,14 +39,12 @@ fn initDevice(device: *Device) DriverError!void {
     var name_buf: [16]u8 = undefined;
     const name = std.fmt.bufPrint(&name_buf, "ata{d}", .{device.id}) catch "ata?";
 
-    const block_id = driver_mgr.registerBlockDevice(name, device, &block_interface) catch {
+    driver_mgr.registerBlockDevice(name, device, &block_interface) catch {
         return DriverError.InitializationFailed;
     };
 
     const size_mb = (ata_meta.sectors * 512) / (1024 * 1024);
     log.info("initialized PIO driver for {s}: {d} MB", .{name, size_mb});
-
-    _ = block_id;
 }
 
 fn unloadDevice(device: *Device) void {

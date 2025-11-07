@@ -83,7 +83,6 @@ pub const DeviceDriver = struct {
 };
 
 pub const BlockDevice = struct {
-    id: u32,
     name: [16]u8,
     device: *Device,
     interface: *const BlockDeviceInterface,
@@ -123,7 +122,6 @@ var active_drivers: ActiveDrivers = .{};
 var device_drivers: std.ArrayList(*const DeviceDriver) = undefined;
 var block_devices: std.ArrayList(BlockDevice) = undefined;
 var driver_allocator: Allocator = undefined;
-var next_block_device_id: u32 = 0;
 var initialized = false;
 
 pub fn init(allocator: Allocator) !void {
@@ -136,7 +134,6 @@ pub fn init(allocator: Allocator) !void {
     try device_mgr.init(allocator);
     device_drivers = std.ArrayList(*const DeviceDriver).empty;
     block_devices = std.ArrayList(BlockDevice).empty;
-    next_block_device_id = 0;
 
     try probeAndInitDrivers();
     try probeBusDrivers();
@@ -457,27 +454,24 @@ fn findBestDriver(device: *Device) ?*const DeviceDriver {
     return best_driver;
 }
 
-pub fn registerBlockDevice(name: []const u8, device: *Device, interface: *const BlockDeviceInterface) !u32 {
+pub fn registerBlockDevice(name: []const u8, device: *Device, interface: *const BlockDeviceInterface) !void {
     var bd = BlockDevice{
-        .id = next_block_device_id,
         .name = undefined,
         .device = device,
         .interface = interface,
     };
-    next_block_device_id += 1;
 
-    // Copy name (truncate if too long)
     const copy_len = @min(name.len, bd.name.len - 1);
     @memcpy(bd.name[0..copy_len], name[0..copy_len]);
-    bd.name[copy_len] = 0; // Null terminate
+    bd.name[copy_len] = 0;
 
     try block_devices.append(driver_allocator, bd);
-    return bd.id;
 }
 
-pub fn getBlockDevice(id: u32) ?*BlockDevice {
+pub fn getBlockDeviceByName(name: []const u8) ?*BlockDevice {
     for (block_devices.items) |*bd| {
-        if (bd.id == id) return bd;
+        const bd_name = std.mem.sliceTo(&bd.name, 0);
+        if (std.mem.eql(u8, bd_name, name)) return bd;
     }
     return null;
 }
@@ -505,6 +499,8 @@ fn logBlockDevices() void {
 fn initVFS() !void {
     const vfs = @import("../vfs/vfs.zig");
     const ramfs = @import("../fs/ramfs.zig");
+    const devfs = @import("../fs/devfs.zig");
+    const sysfs = @import("../fs/sysfs.zig");
     const fat32_driver = @import("../fs/fat32_driver.zig");
 
     const root_ramfs = try ramfs.RamFS.init(driver_allocator);
@@ -512,5 +508,17 @@ fn initVFS() !void {
 
     try vfs.registerFilesystemDriver(&fat32_driver.fat32_driver);
 
-    log.info("vfs ready for mounting", .{});
+    const dev_dir = try vfs.open("/dev", vfs.OpenFlags.CREATE_DIR);
+    dev_dir.close();
+
+    const dev_fs = try devfs.DevFS.init(driver_allocator);
+    try vfs.mount("/dev", &dev_fs.fs);
+
+    const sys_dir = try vfs.open("/sys", vfs.OpenFlags.CREATE_DIR);
+    sys_dir.close();
+
+    const sys_fs = try sysfs.SysFS.init(driver_allocator);
+    try vfs.mount("/sys", &sys_fs.fs);
+
+    log.info("vfs ready with /dev and /sys mounted", .{});
 }
