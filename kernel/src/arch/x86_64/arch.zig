@@ -7,6 +7,10 @@ const pit = @import("pit.zig");
 const keyboard = @import("keyboard.zig");
 const serial = @import("serial.zig");
 const Serial = @import("../../serial.zig").Serial;
+const memory = @import("../../memory.zig");
+const pmm = @import("../../pmm.zig");
+const vmm = @import("../../vmm.zig");
+const allocator = @import("../../allocator.zig");
 
 pub const CpuState = struct {
     // General purpose registers (pushed last by common stub)
@@ -126,7 +130,18 @@ pub fn init() void {
 
     keyboard.init();
 
+    initMemory() catch {
+        @panic("Failed to initialize memory management");
+    };
+
     // asm volatile ("int $32");
+}
+
+fn initMemory() !void {
+    try memory.init();
+    try pmm.init();
+    try vmm.init();
+    try allocator.init();
 }
 
 pub fn initSerial() Serial {

@@ -9,6 +9,8 @@ const log_root = @import("log.zig");
 const serial = @import("serial.zig");
 const shell = @import("shell.zig");
 const keyboard = @import("keyboard.zig");
+const pmm = @import("pmm.zig");
+const allocator = @import("allocator.zig");
 
 const LogoSize = enum { Small, Large };
 
@@ -24,6 +26,9 @@ pub var kernel_tty: ?*Console = null;
 pub var kernel_serial: ?serial.Serial = null;
 
 pub export var base_revision: limine.BaseRevision = .{ .revision = 2 };
+
+pub export var memory_map_request: limine.MemoryMapRequest = .{};
+pub export var hhdm_request: limine.HhdmRequest = .{};
 
 pub const std_options = std.Options{
     .logFn = log,
@@ -129,7 +134,22 @@ fn main() !void {
     }
 
     kernel_tty.?.write("Welcome to Zinx!\n");
-    kernel_tty.?.write("Booting shell\n");
 
+    const total_mem = pmm.getTotalMemory();
+    const free_mem = pmm.getFreeMemory();
+    const heap_stats = allocator.getMemoryStats();
+
+    var buffer: [256]u8 = undefined;
+    var fbs = std.io.fixedBufferStream(buffer[0..]);
+    var writer = fbs.writer();
+
+    writer.print("Memory: {} MB total, {} MB free\n", .{ total_mem / (1024 * 1024), free_mem / (1024 * 1024) }) catch {};
+    kernel_tty.?.write(fbs.getWritten());
+
+    fbs.reset();
+    writer.print("Heap: {} KB allocated, {} KB free\n", .{ heap_stats.used / 1024, heap_stats.free / 1024 }) catch {};
+    kernel_tty.?.write(fbs.getWritten());
+
+    kernel_tty.?.write("Booting shell\n");
     shell.shell_main(kernel_tty.?);
 }

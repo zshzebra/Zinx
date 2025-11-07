@@ -4,6 +4,7 @@ const std = @import("std");
 const log = std.log.scoped(.shell);
 const arch = @import("arch.zig").internals;
 const kmain = @import("main.zig");
+const allocator = @import("allocator.zig");
 
 const COMMAND_BUFFER_SIZE = 128;
 
@@ -30,6 +31,26 @@ fn parseCommand(buffer: []u8, console: *tty.Console) ?ShellCommand {
     }
     if (std.mem.startsWith(u8, buffer, "panic")) {
         @panic("User triggered panic");
+    }
+    if (std.mem.startsWith(u8, buffer, "memtest")) {
+        var kernel_allocator = allocator.getAllocator();
+
+        console.write("Testing memory allocation...\n");
+
+        const test_ptr = kernel_allocator.alloc(u8, 1024) catch {
+            console.write("Allocation failed!\n");
+            return null;
+        };
+        @memset(test_ptr, 0xAA);
+
+        var print_buf: [128]u8 = undefined;
+        var fbs = std.io.fixedBufferStream(print_buf[0..]);
+        var writer = fbs.writer();
+        writer.print("Allocated 1KB at 0x{X}\n", .{@intFromPtr(test_ptr.ptr)}) catch {};
+        console.write(fbs.getWritten());
+
+        kernel_allocator.free(test_ptr);
+        console.write("Memory freed successfully\n");
     }
     if (std.mem.startsWith(u8, buffer, "exit")) {
         return .Exit;
