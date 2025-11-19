@@ -388,9 +388,11 @@ fn getDisplayDrivers() []const *const Driver {
 }
 
 fn getBusDrivers() []const *const Driver {
+    const pci_bus = @import("buses/pci.zig");
     const ata_bus = @import("buses/ata.zig");
 
     return &[_]*const Driver{
+        &pci_bus.driver,
         &ata_bus.driver,
     };
 }
