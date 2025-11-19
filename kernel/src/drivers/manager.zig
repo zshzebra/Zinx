@@ -413,7 +413,10 @@ fn probeBusDrivers() !void {
 
 fn registerAllDeviceDrivers() !void {
     const ata_pio = @import("storage/ata_pio.zig");
+    const xhci = @import("usb/xhci.zig");
+
     try registerDeviceDriver(&ata_pio.device_driver);
+    try registerDeviceDriver(&xhci.device_driver);
 }
 
 pub fn registerDeviceDriver(driver: *const DeviceDriver) !void {
