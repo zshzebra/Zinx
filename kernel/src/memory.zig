@@ -51,14 +51,17 @@ pub fn pageAlignDown(addr: u64) u64 {
     return addr & ~(PAGE_SIZE - 1);
 }
 
+var cached_regions: [256]MemoryRegion = undefined;
+var cached_count: usize = 0;
+var cache_initialized: bool = false;
+
 pub fn getMemoryMap() []MemoryRegion {
+    if (cache_initialized) return cached_regions[0..cached_count];
+
     const memory_map_response = main.memory_map_request.response orelse return &[_]MemoryRegion{};
 
-    var regions: [256]MemoryRegion = undefined;
-    var count: usize = 0;
-
     for (memory_map_response.getEntries()) |entry| {
-        if (count >= regions.len) break;
+        if (cached_count >= cached_regions.len) break;
 
         const type_value = @intFromEnum(entry.type);
         const mem_type: MemoryType = switch (type_value) {
@@ -73,13 +76,14 @@ pub fn getMemoryMap() []MemoryRegion {
             else => .reserved,
         };
 
-        regions[count] = MemoryRegion{
+        cached_regions[cached_count] = MemoryRegion{
             .base = entry.base,
             .length = entry.length,
             .type = mem_type,
         };
-        count += 1;
+        cached_count += 1;
     }
 
-    return regions[0..count];
+    cache_initialized = true;
+    return cached_regions[0..cached_count];
 }

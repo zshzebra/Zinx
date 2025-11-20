@@ -111,13 +111,6 @@ pub fn init() !void {
             for (start_frame..end_frame) |frame| {
                 bitmap.clearFrame(frame);
             }
-        } else {
-            log.debug("Keeping region reserved: {s} 0x{X}-0x{X} ({} KB)", .{
-                @tagName(region.type),
-                region.base,
-                region.base + region.length,
-                region.length / 1024,
-            });
         }
     }
 
