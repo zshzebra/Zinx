@@ -264,10 +264,10 @@ fn parseCommand(buffer: []u8, console: *tty.Console) ?ShellCommand {
     } else if (std.mem.eql(u8, cmd, "serialw")) {
         if (args.len > 0) {
             for (args, 0..) |arg, i| {
-                kmain.kernel_serial.?.writeBytes(arg);
-                if (i < args.len - 1) kmain.kernel_serial.?.write(' ');
+                kmain.kernel_serial.?.print("{s}", .{arg}) catch {};
+                if (i < args.len - 1) kmain.kernel_serial.?.print(" ", .{}) catch {};
             }
-            kmain.kernel_serial.?.write('\n');
+            kmain.kernel_serial.?.print("\n", .{}) catch {};
             for (args, 0..) |arg, i| {
                 console.write(arg);
                 if (i < args.len - 1) console.write(" ");

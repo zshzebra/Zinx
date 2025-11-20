@@ -60,10 +60,23 @@ pub fn getMemoryMap() []MemoryRegion {
     for (memory_map_response.getEntries()) |entry| {
         if (count >= regions.len) break;
 
+        const type_value = @intFromEnum(entry.type);
+        const mem_type: MemoryType = switch (type_value) {
+            0 => .usable,
+            1 => .reserved,
+            2 => .acpi_reclaimable,
+            3 => .acpi_nvs,
+            4 => .bad_memory,
+            5 => .bootloader_reclaimable,
+            6 => .executable_and_modules,
+            7 => .framebuffer,
+            else => .reserved,
+        };
+
         regions[count] = MemoryRegion{
             .base = entry.base,
             .length = entry.length,
-            .type = @enumFromInt(@intFromEnum(entry.type)),
+            .type = mem_type,
         };
         count += 1;
     }

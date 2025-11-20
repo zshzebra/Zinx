@@ -7,7 +7,8 @@ const LoggingError = error{};
 
 // const Writer = std.io.Writer(void, LoggingError, logCallback);
 var log_buffer: [1]u8 = .{0};
-var log_writer = std.Io.Writer{ .buffer = &log_buffer, .end = 0, .vtable = &.{ .drain = logCallback } };
+// TODO: Figure out a better way
+pub var log_writer = std.Io.Writer{ .buffer = &log_buffer, .end = 0, .vtable = &.{ .drain = logCallback } };
 
 var serial_port: serial_hw.Port = serial_hw.Port.COM1;
 

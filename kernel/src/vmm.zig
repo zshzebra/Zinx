@@ -110,6 +110,26 @@ pub fn mapPage(pml4: *PageTable, virt_addr: VirtAddr, phys_addr: PhysAddr, flags
     );
 }
 
+/// Map a page with cache disabled for device MMIO
+/// This is CRITICAL for preventing hardware corruption (e.g., framebuffer, USB controller registers)
+/// Without this, CPU cache can corrupt device registers and vice versa
+pub fn mapPageUncached(pml4: *PageTable, virt_addr: VirtAddr, phys_addr: PhysAddr, flags: PageFlags) !void {
+    var device_flags = flags;
+    device_flags.cache_disable = true; // Disable caching for device MMIO
+    device_flags.write_through = true; // Enable write-through for safety
+    try mapPage(pml4, virt_addr, phys_addr, device_flags);
+}
+
+/// Map multiple contiguous pages with cache disabled for device MMIO
+/// This is used for mapping device BARs (Base Address Registers)
+pub fn mapPagesUncached(pml4: *PageTable, virt_addr: VirtAddr, phys_addr: PhysAddr, page_count: usize, flags: PageFlags) !void {
+    for (0..page_count) |i| {
+        const page_virt = virt_addr + (i * memory.PAGE_SIZE);
+        const page_phys = phys_addr + (i * memory.PAGE_SIZE);
+        try mapPageUncached(pml4, page_virt, page_phys, flags);
+    }
+}
+
 pub fn unmapPage(pml4: *PageTable, virt_addr: VirtAddr) !void {
     const entry = try walkPageTable(pml4, virt_addr, false) orelse return error.PageNotMapped;
 

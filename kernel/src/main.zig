@@ -11,6 +11,7 @@ const shell = @import("shell.zig");
 const keyboard = @import("keyboard.zig");
 const pmm = @import("pmm.zig");
 const allocator = @import("allocator.zig");
+const panic_mod = @import("panic.zig");
 
 const LogoSize = enum { Small, Large };
 
@@ -23,7 +24,9 @@ const logo = switch (LOGO_SIZE) {
 
 const kernel_log = std.log.scoped(.kernel);
 pub var kernel_tty: ?*Console = null;
-pub var kernel_serial: ?serial.Serial = null;
+pub var kernel_serial: ?std.Io.Writer = null;
+
+var panic_buffer: [4 * 1024 * 1024]u8 = undefined;
 
 pub export var base_revision: limine.BaseRevision = .{ .revision = 2 };
 
@@ -46,17 +49,36 @@ pub fn log(
 }
 
 var global_panic_tty: ?*Console = null;
-fn panicWrite(_: void, str: []const u8) error{}!usize {
-    global_panic_tty.?.write(str);
 
-    return str.len;
-}
+const PanicWriter = struct {
+    tty: *Console,
+    serial: ?*serial.Serial,
+
+    pub fn print(self: PanicWriter, comptime format: []const u8, args: anytype) !void {
+        var buf: [1024]u8 = undefined;
+        const msg = try std.fmt.bufPrint(&buf, format, args);
+
+        if (self.serial) |ser| {
+            ser.print(msg);
+        }
+        self.tty.write(msg);
+    }
+};
 
 pub fn panic(msg: []const u8, trace: ?*std.builtin.StackTrace, ret_addr: ?usize) noreturn {
     @branchHint(.cold);
 
     _ = trace;
-    _ = ret_addr;
+
+    const panic_header = "=== KERNEL PANIC ===\n";
+    const panic_msg_prefix = "Error: ";
+
+    if (kernel_serial) |*ser| {
+        ser.print("{s}", .{panic_header}) catch {};
+        ser.print("{s}", .{panic_msg_prefix}) catch {};
+        ser.print("{s}", .{msg}) catch {};
+        ser.print("\n\n", .{}) catch {};
+    }
 
     global_panic_tty = kernel_tty orelse arch.done();
     const panic_tty = global_panic_tty.?;
@@ -64,11 +86,62 @@ pub fn panic(msg: []const u8, trace: ?*std.builtin.StackTrace, ret_addr: ?usize)
     panic_tty.setEnableCursor(false);
     panic_tty.clear();
     panic_tty.write("Uh Oh! It looks like Zinx has encountered an error.\n");
+    if (kernel_serial == null) panic_tty.write("No serial available\n");
     panic_tty.write(msg);
     panic_tty.writeChar('\n');
+    panic_tty.writeChar('\n');
 
+    var fba = std.heap.FixedBufferAllocator.init(&panic_buffer);
+
+    var debug_info = panic_mod.DebugInfo.init(fba.allocator()) catch |err| {
+        var buf: [128]u8 = undefined;
+        const err_msg = std.fmt.bufPrint(&buf, "Failed to init debug info: {}\n", .{err}) catch "Failed to init debug info\n";
+
+        if (kernel_serial) |*ser| {
+            ser.print("{s}", .{err_msg}) catch {};
+            ser.print("Stack print(addresses only):\n", .{}) catch {};
+        }
+        panic_tty.write(err_msg);
+        panic_tty.write("Stack trace (addresses only):\n");
+
+        var it = std.debug.StackIterator.init(ret_addr orelse @returnAddress(), @frameAddress());
+        defer it.deinit();
+
+        var frame_num: usize = 0;
+        while (it.next()) |addr| : (frame_num += 1) {
+            var addr_buf: [64]u8 = undefined;
+            const addr_msg = std.fmt.bufPrint(&addr_buf, "  #{d}: 0x{X}\n", .{ frame_num, addr }) catch break;
+            if (kernel_serial) |*ser| {
+                ser.print("{s}", .{addr_msg}) catch {};
+            }
+            panic_tty.write(addr_msg);
+            if (frame_num >= 20) break;
+        }
+        shutdownOrHalt(panic_tty);
+    };
+    defer debug_info.deinit();
+
+    if (kernel_serial) |*ser| {
+        ser.print("Stack trace:\n", .{}) catch {};
+    }
+    panic_tty.write("Stack trace:\n");
+
+    const writer = @constCast(&log_root.log_writer);
+    debug_info.printStackTrace(writer, ret_addr orelse @returnAddress(), @frameAddress()) catch |err| {
+        var buf: [128]u8 = undefined;
+        const err_msg = std.fmt.bufPrint(&buf, "Failed to print stack trace: {}\n", .{err}) catch "Failed to print stack trace\n";
+        if (kernel_serial) |*ser| {
+            ser.print("{s}", .{err_msg}) catch {};
+        }
+        panic_tty.write(err_msg);
+    };
+
+    shutdownOrHalt(panic_tty);
+}
+
+fn shutdownOrHalt(panic_tty: *Console) noreturn {
     if (keyboard.getKeyboard(0)) |kb| {
-        panic_tty.write("Press and release <space> to shutdown");
+        panic_tty.write("\nPress and release <space> to shutdown");
 
         while (true) {
             if (kb.readKey()) |key| {
@@ -80,7 +153,7 @@ pub fn panic(msg: []const u8, trace: ?*std.builtin.StackTrace, ret_addr: ?usize)
         arch.done();
     }
 
-    panic_tty.write("No keyboard found, manually reset your device\n");
+    panic_tty.write("\nNo keyboard found, manually reset your device\n");
     arch.done();
 }
 
@@ -90,6 +163,7 @@ export fn _start() noreturn {
     }
 
     log_root.init();
+    kernel_serial = log_root.log_writer;
 
     kernel_log.info("base revision supported", .{});
     kernel_log.info("serial initialization succeeded", .{});

@@ -92,13 +92,32 @@ pub fn init() !void {
     @memset(bitmap.data, 0xFF);
 
     for (memory_map) |region| {
-        if (region.type == .usable) {
+        const is_free = switch (region.type) {
+            .usable, .bootloader_reclaimable, .acpi_reclaimable => true,
+            .reserved, .acpi_nvs, .bad_memory, .executable_and_modules, .framebuffer => false,
+        };
+
+        if (is_free) {
             const start_frame = memory.pageAlignDown(region.base) / PAGE_SIZE;
             const end_frame = memory.pageAlign(region.base + region.length) / PAGE_SIZE;
+
+            log.debug("Marking region as free: {s} 0x{X}-0x{X} ({} KB)", .{
+                @tagName(region.type),
+                region.base,
+                region.base + region.length,
+                region.length / 1024,
+            });
 
             for (start_frame..end_frame) |frame| {
                 bitmap.clearFrame(frame);
             }
+        } else {
+            log.debug("Keeping region reserved: {s} 0x{X}-0x{X} ({} KB)", .{
+                @tagName(region.type),
+                region.base,
+                region.base + region.length,
+                region.length / 1024,
+            });
         }
     }
 

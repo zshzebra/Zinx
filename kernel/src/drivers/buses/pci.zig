@@ -125,6 +125,124 @@ pub const PCIDevice = struct {
         command |= pci_arch.PCI_COMMAND_IO;
         pci_arch.configWriteU16(self.bus, self.device, self.function, pci_arch.PCI_COMMAND, command);
     }
+
+    /// Check if a BAR is a memory BAR (vs I/O BAR)
+    pub fn isBarMemory(self: PCIDevice, bar_index: u3) bool {
+        if (bar_index >= 6) return false;
+        return (self.bars[bar_index] & 0x1) == 0;
+    }
+
+    /// Get physical address from BAR value
+    /// Returns null if BAR is not configured or is an I/O BAR
+    pub fn getBarPhysAddr(self: PCIDevice, bar_index: u3) ?u64 {
+        if (bar_index >= 6) return null;
+        const bar = self.bars[bar_index];
+
+        // Check if this is a memory BAR
+        if ((bar & 0x1) != 0) return null; // I/O BAR
+
+        // Mask off lower bits (type, prefetchable, etc.)
+        return bar & 0xFFFFFFF0;
+    }
+
+    /// Get BAR size by writing 0xFFFFFFFF and reading back
+    /// This is the standard PCI method for determining BAR size
+    pub fn getBarSize(self: PCIDevice, bar_index: u3) u64 {
+        if (bar_index >= 6) return 0;
+
+        const bar_offset = pci_arch.getBarOffset(bar_index);
+
+        // Save original value
+        const original = pci_arch.configReadU32(self.bus, self.device, self.function, bar_offset);
+
+        // Write all 1s
+        pci_arch.configWriteU32(self.bus, self.device, self.function, bar_offset, 0xFFFFFFFF);
+
+        // Read back to see which bits are writable
+        const size_mask = pci_arch.configReadU32(self.bus, self.device, self.function, bar_offset);
+
+        // Restore original value
+        pci_arch.configWriteU32(self.bus, self.device, self.function, bar_offset, original);
+
+        // If all bits are 0, BAR is not implemented
+        if (size_mask == 0) return 0;
+
+        // Check if this is a memory BAR
+        if ((original & 0x1) != 0) {
+            // I/O BAR - mask is in lower bits
+            const masked = size_mask & 0xFFFFFFFC;
+            if (masked == 0) return 0;
+            return (~masked) + 1;
+        } else {
+            // Memory BAR - check if it's 64-bit
+            const is_64bit = ((original >> 1) & 0x3) == 0x2;
+
+            if (is_64bit and bar_index < 5) {
+                // 64-bit BAR uses two consecutive BAR registers
+                const low_mask = size_mask & 0xFFFFFFF0;
+                const high_offset = pci_arch.getBarOffset(bar_index + 1);
+
+                // Save high BAR
+                const high_original = pci_arch.configReadU32(self.bus, self.device, self.function, high_offset);
+
+                // Write all 1s to high BAR
+                pci_arch.configWriteU32(self.bus, self.device, self.function, high_offset, 0xFFFFFFFF);
+
+                // Read back high mask
+                const high_mask = pci_arch.configReadU32(self.bus, self.device, self.function, high_offset);
+
+                // Restore high BAR
+                pci_arch.configWriteU32(self.bus, self.device, self.function, high_offset, high_original);
+
+                // Combine into 64-bit size
+                const full_mask = (@as(u64, high_mask) << 32) | @as(u64, low_mask);
+                if (full_mask == 0) return 0;
+                return (~full_mask) + 1;
+            } else {
+                // 32-bit memory BAR
+                const masked = size_mask & 0xFFFFFFF0;
+                if (masked == 0) return 0;
+                return (~@as(u64, masked)) + 1;
+            }
+        }
+    }
+
+    /// Map a BAR into virtual memory with cache disabled (CRITICAL for device MMIO)
+    /// Returns virtual address of the mapped region
+    pub fn mapBar(self: PCIDevice, bar_index: u3) !u64 {
+        const vmm = @import("../../vmm.zig");
+        const memory = @import("../../memory.zig");
+
+        const phys_addr = self.getBarPhysAddr(bar_index) orelse return error.InvalidBar;
+        const size = self.getBarSize(bar_index);
+
+        if (size == 0) return error.BarNotConfigured;
+
+        log.debug("Mapping BAR{}: phys=0x{X}, size=0x{X}", .{ bar_index, phys_addr, size });
+
+        // Calculate number of pages needed
+        const page_count = (size + memory.PAGE_SIZE - 1) / memory.PAGE_SIZE;
+
+        // Allocate virtual address space
+        const virt_addr = try vmm.allocVirtual(page_count);
+
+        // Map with cache disabled (CRITICAL!)
+        try vmm.mapPagesUncached(
+            vmm.kernel_page_table.?,
+            virt_addr,
+            phys_addr,
+            page_count,
+            vmm.PageFlags{
+                .present = true,
+                .writable = true,
+                .global = true,
+            },
+        );
+
+        log.debug("Mapped BAR{} to virt=0x{X}", .{ bar_index, virt_addr });
+
+        return virt_addr;
+    }
 };
 
 /// Read all BARs for a device
@@ -185,6 +303,7 @@ fn probeFunction(bus: u8, dev: u5, func: u3) !void {
             .device_id = device_id,
             .class_code = class_code,
             .subclass = subclass,
+            .prog_if = prog_if,
             .bus = bus,
             .device = dev,
             .function = func,
