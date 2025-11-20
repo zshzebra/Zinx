@@ -185,7 +185,6 @@ fn probeFunction(bus: u8, dev: u5, func: u3) !void {
             .device_id = device_id,
             .class_code = class_code,
             .subclass = subclass,
-            .prog_if = prog_if,
             .bus = bus,
             .device = dev,
             .function = func,

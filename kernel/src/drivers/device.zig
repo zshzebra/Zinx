@@ -22,7 +22,6 @@ pub const DeviceMetadata = union(BusType) {
         device_id: u16,
         class_code: u8,
         subclass: u8,
-        prog_if: u8,
         bus: u8,
         device: u8,
         function: u8,

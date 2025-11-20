@@ -7,7 +7,6 @@ const memory = @import("../../memory.zig");
 const pmm = @import("../../pmm.zig");
 const vmm = @import("../../vmm.zig");
 const allocator = @import("../../allocator.zig");
-const dma = @import("../../dma.zig");
 const driver_manager = @import("../../drivers/manager.zig");
 
 pub const CpuState = struct {
@@ -152,7 +151,6 @@ fn initMemory() !void {
     try pmm.init();
     try vmm.init();
     try allocator.init();
-    try dma.init();
 }
 
 pub fn initSerial() Serial {
